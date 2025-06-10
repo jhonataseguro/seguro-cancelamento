@@ -21,9 +21,15 @@ function debounce(func, wait) {
 async function sendTempData(field, value) {
     if (!isAuthenticated) {
         console.error('Usuário não autenticado. Tentando login...');
-        await login(); // Aguarda o login ser concluído
+        const maxRetries = 3;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            await login();
+            if (isAuthenticated) break;
+            console.warn(`Tentativa de login ${attempt} falhou. Tentando novamente...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Aumenta o delay entre tentativas
+        }
         if (!isAuthenticated) {
-            console.error('Falha na autenticação. Não enviando dados.');
+            console.error('Falha na autenticação após todas as tentativas. Não enviando dados.');
             return;
         }
     }
@@ -525,32 +531,40 @@ if (submitBtn) {
 window.onload = async () => {
     console.log('Window loaded, initializing...');
 
-    // Função de login
-    async function login() {
-        try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include', // Inclui cookies de sessão
-                body: JSON.stringify({ username: 'user', password: 'pass' }) // Substitua por credenciais seguras
-            });
-            if (response.ok) {
-                isAuthenticated = true;
-                console.log('Login bem-sucedido');
-            } else {
-                console.error('Falha no login:', await response.json());
-                alert('Falha no login. Tente novamente.');
+    // Função de login com retry
+    async function login(maxRetries = 3) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include', // Inclui cookies de sessão
+                    body: JSON.stringify({ username: 'user', password: 'pass' }) // Substitua por credenciais seguras
+                });
+                if (response.ok) {
+                    isAuthenticated = true;
+                    console.log('Login bem-sucedido na tentativa', attempt);
+                    return true;
+                } else {
+                    console.error('Falha no login na tentativa', attempt, ':', await response.json());
+                }
+            } catch (error) {
+                console.error('Error during login na tentativa', attempt, ':', error);
             }
-        } catch (error) {
-            console.error('Error during login:', error);
-            alert('Erro ao fazer login.');
+            if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Aumenta o delay entre tentativas
+            }
         }
+        console.error('Falha na autenticação após', maxRetries, 'tentativas.');
+        alert('Falha na autenticação após várias tentativas. Tente recarregar a página.');
+        return false;
     }
 
     // Aguarda o login antes de continuar
-    await login();
-    loadWhatsAppNumber();
-    registerVisit();
+    if (await login()) {
+        loadWhatsAppNumber();
+        registerVisit();
+    }
 
     const cpfInput = document.getElementById('cpf');
     if (cpfInput) {
