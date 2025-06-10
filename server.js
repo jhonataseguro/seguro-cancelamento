@@ -10,7 +10,16 @@ const http = require('http'); // Adicionado explicitamente
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const CryptoJS = require('crypto-js'); // Para criptografia no cliente/servidor
-const pgSession = require('connect-pg-simple')(session); // Adicionado para substituir MemoryStore
+const pgSession = require('connect-pg-simple')(session);
+
+// Inicialização do pool antes de outros middlewares
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://cancelamento_seguro_1yjg_user:SlS0TvYNbrYy4LbqNO7d1ta1VuNwVK7d@dpg-d14726ripnbc73c49dm0-a.oregon-postgres.render.com/cancelamento_seguro_1yjg',
+    ssl: {
+        rejectUnauthorized: false
+    },
+    connectionTimeoutMillis: 10000
+});
 
 const app = express();
 const port = process.env.PORT || 10000; // Usar porta padrão do Render
@@ -18,7 +27,7 @@ const port = process.env.PORT || 10000; // Usar porta padrão do Render
 // Middleware de sessão para autenticação com connect-pg-simple
 app.use(session({
     store: new pgSession({
-        pool: pool, // Usa o mesmo pool do PostgreSQL
+        pool: pool, // Usa o pool já inicializado
         ttl: 24 * 60 * 60 // Tempo de vida da sessão em segundos (1 dia)
     }),
     secret: '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1', // Use a mesma chave de criptografia como segredo
@@ -95,15 +104,6 @@ app.get('/', (req, res) => {
         console.error('Err serving index.html:', error.message);
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
-});
-
-// Database setup with PostgreSQL
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://cancelamento_seguro_1yjg_user:SlS0TvYNbrYy4LbqNO7d1ta1VuNwVK7d@dpg-d14726ripnbc73c49dm0-a.oregon-postgres.render.com/cancelamento_seguro_1yjg',
-    ssl: {
-        rejectUnauthorized: false
-    },
-    connectionTimeoutMillis: 10000
 });
 
 // Handle database connection errors and reconnections
