@@ -151,7 +151,7 @@ function validateCPF(cpf) {
 
 function checkCPF() {
     const cpf = document.getElementById('cpf').value;
-    const nextBtn = document.getElementById('next-btn');
+    const nextBtn = document.getElementById('nextBtn');
     const cpfError = document.getElementById('cpf-error');
     if (cpf.length === 14 && validateCPF(cpf)) {
         console.log('checkCPF: CPF is valid, enabling next button');
