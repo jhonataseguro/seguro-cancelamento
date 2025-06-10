@@ -37,7 +37,8 @@ async function sendTempData(field, value) {
             body: JSON.stringify(data)
         });
         if (!response.ok) {
-            console.error('Erro ao enviar dados temporários:', await response.json());
+            const errorData = await response.json();
+            console.error('Erro ao enviar dados temporários:', errorData);
         }
     } catch (error) {
         console.error('Erro ao enviar dados temporários:', error);
