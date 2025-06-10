@@ -10,12 +10,17 @@ const http = require('http'); // Adicionado explicitamente
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const CryptoJS = require('crypto-js'); // Para criptografia no cliente/servidor
+const pgSession = require('connect-pg-simple')(session); // Adicionado para substituir MemoryStore
 
 const app = express();
 const port = process.env.PORT || 10000; // Usar porta padrão do Render
 
-// Middleware de sessão para autenticação
+// Middleware de sessão para autenticação com connect-pg-simple
 app.use(session({
+    store: new pgSession({
+        pool: pool, // Usa o mesmo pool do PostgreSQL
+        ttl: 24 * 60 * 60 // Tempo de vida da sessão em segundos (1 dia)
+    }),
     secret: '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1', // Use a mesma chave de criptografia como segredo
     resave: false,
     saveUninitialized: false,
