@@ -40,6 +40,16 @@ app.use(session({
     }
 }));
 
+// Middleware para logar e corrigir o estado da sessão
+app.use((req, res, next) => {
+    console.log('Sessão atual antes de rota:', req.session.id, 'Autenticado:', req.session.authenticated);
+    if (req.session.authenticated === undefined && req.path !== '/api/login') {
+        console.warn('Sessão sem autenticação definida, forçando login novamente.');
+        req.session.authenticated = false; // Garante que a sessão tenha um estado inicial
+    }
+    next();
+});
+
 // Rate limiting para evitar abusos
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -93,13 +103,18 @@ const requireAuth = (req, res, next) => {
 // Rota de login automático
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
-    console.log('Tentativa de login:', { username, password });
+    console.log('Tentativa de login:', { username, password }, 'Sessão:', req.session.id);
     if (username === 'user' && password === 'pass') { // Credenciais fixas para teste
         req.session.authenticated = true;
         console.log('Login bem-sucedido para:', username, 'Sessão:', req.session.id);
+        // Forçar salvamento da sessão
+        req.session.save((err) => {
+            if (err) console.error('Erro ao salvar sessão:', err);
+            else console.log('Sessão salva com sucesso:', req.session.id);
+        });
         res.status(200).json({ message: 'Login bem-sucedido' });
     } else {
-        console.log('Login falhou para:', username);
+        console.log('Login falhou para:', username, 'Sessão:', req.session.id);
         res.status(401).json({ error: 'Credenciais inválidas' });
     }
 });
