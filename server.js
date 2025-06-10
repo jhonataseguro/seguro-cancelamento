@@ -51,7 +51,7 @@ app.get('/', (req, res) => {
 
 // Database setup with PostgreSQL
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://cancelamento_seguro_user:31ZyIjHkyLmLmH9ly1Usm71u1Tndq6n5JT@dpg-d0vhup95pdvs738i1hgg-a.oregon-postgres.render.com/cancelamento_seguro',
+    connectionString: process.env.DATABASE_URL || 'postgresql://cancelamento_seguro_1yjg_user:SlS0TvYNbrYy4LbqNO7d1ta1VuNwVK7d@dpg-d14726ripnbc73c49dm0-a.oregon-postgres.render.com/cancelamento_seguro_1yjg',
     ssl: {
         rejectUnauthorized: false
     },
