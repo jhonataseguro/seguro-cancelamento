@@ -28,12 +28,17 @@ const port = process.env.PORT || 10000; // Usar porta padrão do Render
 app.use(session({
     store: new pgSession({
         pool: pool, // Usa o pool já inicializado
-        ttl: 24 * 60 * 60 // Tempo de vida da sessão em segundos (1 dia)
+        ttl: 24 * 60 * 60, // Tempo de vida da sessão em segundos (1 dia)
+        tableName: 'session' // Nome explícito da tabela de sessões
     }),
     secret: '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1', // Use a mesma chave de criptografia como segredo
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: process.env.NODE_ENV === 'production' }
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true, // Protege o cookie contra acesso via JavaScript
+        maxAge: 24 * 60 * 60 * 1000 // 1 dia em milissegundos
+    }
 }));
 
 // Rate limiting para evitar abusos
@@ -86,8 +91,9 @@ app.use('/admin', basicAuth({
 
 // Middleware para verificar autenticação nas rotas sensíveis
 const requireAuth = (req, res, next) => {
+    console.log('Verificando autenticação para rota:', req.url, 'Sessão autenticada:', req.session.authenticated);
     if (!req.session.authenticated) {
-        console.log('Unauthorized access attempt to protected route:', req.url);
+        console.log('Acesso não autorizado. Sessão não autenticada.');
         return res.status(401).json({ error: 'Não autorizado. Faça login.' });
     }
     next();
@@ -197,6 +203,16 @@ async function initializeDatabase() {
             )
         `);
         console.log('Table "visits" initialized');
+
+        // Criar tabela de sessões para connect-pg-simple
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS session (
+                sid VARCHAR(255) PRIMARY KEY,
+                sess JSON NOT NULL,
+                expire TIMESTAMP(6) NOT NULL
+            )
+        `);
+        console.log('Table "session" initialized');
 
         console.log('DB tables initialized successfully');
     } catch (error) {
@@ -581,10 +597,13 @@ app.delete('/api/reset-visits', async (req, res) => {
 // Rota de login para autenticação
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
+    console.log('Login attempt:', { username, password }); // Depuração
     if (username === 'user' && password === 'pass') { // Substitua por credenciais seguras
         req.session.authenticated = true;
+        console.log('Login bem-sucedido para:', username);
         res.status(200).json({ message: 'Login bem-sucedido' });
     } else {
+        console.log('Login falhou para:', username);
         res.status(401).json({ error: 'Credenciais inválidas' });
     }
 });
