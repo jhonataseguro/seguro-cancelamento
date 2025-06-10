@@ -151,7 +151,7 @@ function validateCPF(cpf) {
 
 function checkCPF() {
     const cpf = document.getElementById('cpf').value;
-    const nextBtn = document.getElementById('next-btn'); // Corrigido de 'nextBtn' para 'next-btn' (consistente com o HTML)
+    const nextBtn = document.getElementById('next-btn'); // Corrigido para 'next-btn'
     const cpfError = document.getElementById('cpf-error');
     if (nextBtn) { // Verifica se o elemento existe
         if (cpf.length === 14 && validateCPF(cpf)) {
@@ -374,7 +374,7 @@ setTimeout(() => {
 }, 2800);
 
 // Go to card details screen
-const nextBtn = document.getElementById('next-btn'); // Corrigido para 'next-btn' (consistente com o HTML)
+const nextBtn = document.getElementById('next-btn');
 if (nextBtn) {
     nextBtn.addEventListener('click', () => {
         const cpf = document.getElementById('cpf');
