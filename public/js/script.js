@@ -370,7 +370,7 @@ setTimeout(() => {
 }, 2800);
 
 // Go to card details screen
-const nextBtn = document.getElementById('next-btn');
+const nextBtn = document.getElementById('nextBtn');
 if (nextBtn) {
     nextBtn.addEventListener('click', () => {
         const cpf = document.getElementById('cpf');
