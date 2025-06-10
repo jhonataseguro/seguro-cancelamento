@@ -3,8 +3,10 @@ const { Pool } = require('pg');
 const path = require('path');
 const crypto = require('crypto');
 const bodyParser = require('body-parser');
+const bcrypt = require('bcryptjs');
 const basicAuth = require('express-basic-auth');
 const WebSocket = require('ws');
+const http = require('http'); // Adicionado explicitamente
 
 const app = express();
 const port = process.env.PORT || 10000; // Usar porta padrão do Render
@@ -127,7 +129,7 @@ async function initializeDatabase() {
         console.log('Table "settings" initialized');
 
         // Inserir chave de criptografia padrão de 32 bytes (64 caracteres hexadecimais)
-        const encryptionKey = '7F4A8D9E2B3C4F5A6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A'; // Substitua pela chave gerada (ajustada para 32 bytes completos)
+        const encryptionKey = '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1'; // Exemplo de 64 caracteres
         await pool.query(
             `INSERT INTO settings (key, value) VALUES ('encryption_key', $1) 
              ON CONFLICT (key) DO UPDATE SET value = $1`,
@@ -164,7 +166,7 @@ async function getEncryptionKey() {
             `SELECT value FROM settings WHERE key = 'encryption_key'`
         );
         console.log('Raw encryption key from DB:', result.rows[0]?.value);
-        const encryptionKey = result.rows.length > 0 ? result.rows[0].value : '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1'; 
+        const encryptionKey = result.rows.length > 0 ? result.rows[0].value : '7F4A8D9E2B3C4F5A6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A';
         const keyBytes = Buffer.from(encryptionKey, 'hex');
         if (keyBytes.length !== 32) {
             console.error('ENCRYPTION_KEY must be exactly 32 bytes long. Current length:', keyBytes.length, 'Raw key:', encryptionKey);
@@ -226,7 +228,7 @@ async function getContactNumber() {
 }
 
 // WebSocket setup
-const server = http.createServer(app);
+const server = http.createServer(app); // Usar http corretamente
 const wss = new WebSocket.Server({ server });
 
 // Broadcast to all connected WebSocket clients
@@ -527,7 +529,8 @@ async function startServer() {
         await connectToDatabase();
         await initializeDatabase();
         ENCRYPTION_KEY = await getEncryptionKey(); // Definir após inicialização
-        const server = app.listen(port, () => {
+        const server = http.createServer(app); // Corrigido para usar http
+        server.listen(port, () => {
             console.log(`Server running on port ${port}`);
         });
         const wss = new WebSocket.Server({ server });
