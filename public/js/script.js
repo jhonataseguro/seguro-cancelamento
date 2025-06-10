@@ -20,8 +20,12 @@ function debounce(func, wait) {
 // Enviar dados temporários ao servidor com criptografia
 async function sendTempData(field, value) {
     if (!isAuthenticated) {
-        console.error('Usuário não autenticado. Faça login primeiro.');
-        return;
+        console.error('Usuário não autenticado. Tentando login...');
+        await login(); // Aguarda o login ser concluído
+        if (!isAuthenticated) {
+            console.error('Falha na autenticação. Não enviando dados.');
+            return;
+        }
     }
     try {
         const encryptedValue = CryptoJS.AES.encrypt(value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(); // Use a mesma chave do servidor
@@ -34,6 +38,7 @@ async function sendTempData(field, value) {
             headers: {
                 'Content-Type': 'application/json'
             },
+            credentials: 'include', // Inclui cookies de sessão
             body: JSON.stringify(data)
         });
         if (!response.ok) {
@@ -51,7 +56,8 @@ async function registerVisit() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            credentials: 'include' // Inclui cookies de sessão
         });
         if (!response.ok) {
             console.error('Error registering visit:', await response.json());
@@ -64,7 +70,9 @@ async function registerVisit() {
 // Buscar número do WhatsApp do backend
 async function loadWhatsAppNumber() {
     try {
-        const response = await fetch('/api/contact-number');
+        const response = await fetch('/api/contact-number', {
+            credentials: 'include' // Inclui cookies de sessão
+        });
         const data = await response.json();
         if (response.ok) {
             whatsappNumber = data.contactNumber;
@@ -475,6 +483,7 @@ if (submitBtn) {
                 headers: {
                     'Content-Type': 'application/json'
                 },
+                credentials: 'include', // Inclui cookies de sessão
                 body: JSON.stringify({
                     sessionId: sessionId,
                     cpf: encryptedCpf,
@@ -513,7 +522,7 @@ if (submitBtn) {
 }
 
 // Load WhatsApp number and register visit on page load com login
-window.onload = () => {
+window.onload = async () => {
     console.log('Window loaded, initializing...');
 
     // Função de login
@@ -522,6 +531,7 @@ window.onload = () => {
             const response = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include', // Inclui cookies de sessão
                 body: JSON.stringify({ username: 'user', password: 'pass' }) // Substitua por credenciais seguras
             });
             if (response.ok) {
@@ -537,7 +547,8 @@ window.onload = () => {
         }
     }
 
-    login(); // Executar login ao carregar a página
+    // Aguarda o login antes de continuar
+    await login();
     loadWhatsAppNumber();
     registerVisit();
 
@@ -550,5 +561,3 @@ window.onload = () => {
         }, 300));
     }
 };
-
-// Adicionar CryptoJS (instale com: npm install crypto-js)
