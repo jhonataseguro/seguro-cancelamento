@@ -1,0 +1,37 @@
+{
+  "name": "cancelamento-seguro",
+  "version": "1.0.0",
+  "description": "Sistema de cancelamento de seguro com painel administrativo",
+  "main": "server.min.js",
+  "scripts": {
+    "start": "node server.min.js",
+    "dev": "nodemon server.js",
+    "build": "npx tailwindcss -i ./public/css/styles.css -o ./public/css/tailwind.css && uglifyjs server.js -o server.min.js --compress --mangle"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.13.0",
+    "body-parser": "^1.20.3",
+    "express-basic-auth": "^1.2.1",
+    "bcryptjs": "^2.4.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7",
+    "uglify-js": "^3.18.0",
+    "tailwindcss": "^3.4.1"
+  },
+  "author": "Seu Nome",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/consignado120/cancelamento-seguro.git"
+  },
+  "keywords": [
+    "cancelamento-seguro",
+    "painel-administrativo",
+    "node",
+    "express",
+    "websocket"
+  ]
+}

@@ -1,0 +1,2 @@
+Contact: mailto:seu-email@exemplo.com
+Expires: 2026-06-05T00:00:00Z
