@@ -401,9 +401,43 @@ if (submitBtn) {
     });
 }
 
-// Carregar ao iniciar
+// Carregar ao iniciar com autenticação
 window.onload = async () => {
     console.log('Página carregada, iniciando autenticação...');
+
+    // Função de login automática
+    async function login(maxRetries = 3) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`Tentativa de login ${attempt}...`);
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ username: 'user', password: 'pass' })
+                });
+                const responseData = await response.json();
+                console.log(`Resposta do login ${attempt}:`, responseData);
+                if (response.ok) {
+                    isAuthenticated = true;
+                    console.log('Login bem-sucedido na tentativa', attempt);
+                    return true;
+                } else {
+                    console.error('Falha no login:', responseData.error || response.statusText);
+                }
+            } catch (error) {
+                console.error('Erro no login na tentativa', attempt, ':', error);
+            }
+            if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            }
+        }
+        console.error('Falha na autenticação após', maxRetries, 'tentativas.');
+        alert('Falha na autenticação. Recarregue a página.');
+        return false;
+    }
+
+    // Executar autenticação e continuar o fluxo
     if (await login()) {
         loadWhatsAppNumber();
         registerVisit();
