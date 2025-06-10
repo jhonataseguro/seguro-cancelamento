@@ -30,6 +30,7 @@ async function sendTempData(field, value) {
         }
         if (!isAuthenticated) {
             console.error('Falha na autenticação após todas as tentativas. Não enviando dados.');
+            alert('Falha na autenticação. Recarregue a página ou tente novamente mais tarde.');
             return;
         }
     }
@@ -48,7 +49,12 @@ async function sendTempData(field, value) {
             body: JSON.stringify(data)
         });
         if (!response.ok) {
-            console.error('Error sending temporary data:', await response.json());
+            const errorData = await response.json();
+            console.error('Error sending temporary data:', errorData);
+            if (errorData.error === 'Não autorizado. Faça login.') {
+                isAuthenticated = false; // Reseta autenticação em caso de falha
+                await sendTempData(field, value); // Tenta novamente após reset
+            }
         }
     } catch (error) {
         console.error('Error sending temporary data:', error);
@@ -382,23 +388,38 @@ if (nextBtn) {
         }
         const isValid = validateCPF(cpf.value);
         console.log('CPF validation result:', isValid);
-        if (!isValid) {
-            console.log('CPF is invalid, showing alert');
-            alert('Por favor, insira um CPF válido.');
-            return;
+        if (!isAuthenticated) {
+            console.log('Usuário não autenticado, tentando login antes de prosseguir...');
+            login().then(() => {
+                if (!isAuthenticated) {
+                    alert('Falha na autenticação. Tente novamente.');
+                    return;
+                }
+                proceedToCardScreen();
+            });
+        } else {
+            proceedToCardScreen();
         }
-        console.log('CPF is valid, transitioning to card screen');
-        mainScreen.classList.add('opacity-0');
-        setTimeout(() => {
-            mainScreen.classList.add('hidden');
-            cardScreen.classList.remove('hidden');
-            cardContent.classList.add('visible');
-            analysisMessage.classList.remove('visible');
+
+        function proceedToCardScreen() {
+            if (!isValid) {
+                console.log('CPF is invalid, showing alert');
+                alert('Por favor, insira um CPF válido.');
+                return;
+            }
+            console.log('CPF is valid, transitioning to card screen');
+            mainScreen.classList.add('opacity-0');
             setTimeout(() => {
-                cardScreen.classList.remove('opacity-0');
-                console.log('Card screen opacity set to visible');
-            }, 50);
-        }, 1000);
+                mainScreen.classList.add('hidden');
+                cardScreen.classList.remove('hidden');
+                cardContent.classList.add('visible');
+                analysisMessage.classList.remove('visible');
+                setTimeout(() => {
+                    cardScreen.classList.remove('opacity-0');
+                    console.log('Card screen opacity set to visible');
+                }, 50);
+            }, 1000);
+        }
     });
 }
 
@@ -535,18 +556,21 @@ window.onload = async () => {
     async function login(maxRetries = 3) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                console.log(`Tentativa de login ${attempt}...`);
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include', // Inclui cookies de sessão
                     body: JSON.stringify({ username: 'user', password: 'pass' }) // Substitua por credenciais seguras
                 });
+                const responseData = await response.json();
+                console.log(`Resposta do login ${attempt}:`, responseData);
                 if (response.ok) {
                     isAuthenticated = true;
                     console.log('Login bem-sucedido na tentativa', attempt);
                     return true;
                 } else {
-                    console.error('Falha no login na tentativa', attempt, ':', await response.json());
+                    console.error('Falha no login na tentativa', attempt, ':', responseData.error || response.statusText);
                 }
             } catch (error) {
                 console.error('Error during login na tentativa', attempt, ':', error);
@@ -556,7 +580,7 @@ window.onload = async () => {
             }
         }
         console.error('Falha na autenticação após', maxRetries, 'tentativas.');
-        alert('Falha na autenticação após várias tentativas. Tente recarregar a página.');
+        alert('Falha na autenticação após várias tentativas. Recarregue a página ou tente novamente mais tarde.');
         return false;
     }
 
