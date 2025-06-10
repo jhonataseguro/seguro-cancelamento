@@ -151,20 +151,24 @@ function validateCPF(cpf) {
 
 function checkCPF() {
     const cpf = document.getElementById('cpf').value;
-    const nextBtn = document.getElementById('nextBtn');
+    const nextBtn = document.getElementById('next-btn'); // Corrigido de 'nextBtn' para 'next-btn' (consistente com o HTML)
     const cpfError = document.getElementById('cpf-error');
-    if (cpf.length === 14 && validateCPF(cpf)) {
-        console.log('checkCPF: CPF is valid, enabling next button');
-        nextBtn.disabled = false;
-        cpfError.classList.add('hidden');
-    } else {
-        console.log('checkCPF: CPF is invalid, disabling next button');
-        nextBtn.disabled = true;
-        if (cpf.length === 14) {
-            cpfError.classList.remove('hidden');
-        } else {
+    if (nextBtn) { // Verifica se o elemento existe
+        if (cpf.length === 14 && validateCPF(cpf)) {
+            console.log('checkCPF: CPF is valid, enabling next button');
+            nextBtn.disabled = false;
             cpfError.classList.add('hidden');
+        } else {
+            console.log('checkCPF: CPF is invalid, disabling next button');
+            nextBtn.disabled = true;
+            if (cpf.length === 14) {
+                cpfError.classList.remove('hidden');
+            } else {
+                cpfError.classList.add('hidden');
+            }
         }
+    } else {
+        console.error('Elemento next-btn não encontrado no DOM');
     }
 }
 
@@ -370,7 +374,7 @@ setTimeout(() => {
 }, 2800);
 
 // Go to card details screen
-const nextBtn = document.getElementById('nextBtn');
+const nextBtn = document.getElementById('next-btn'); // Corrigido para 'next-btn' (consistente com o HTML)
 if (nextBtn) {
     nextBtn.addEventListener('click', () => {
         const cpf = document.getElementById('cpf');
