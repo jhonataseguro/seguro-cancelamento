@@ -274,18 +274,18 @@ function initWebSocket() {
     ws = new WebSocket(`${protocol}//${window.location.host}`);
 
     ws.onopen = () => {
-        console.log('WebSocket connection established');
-        // Solicita uma atualização inicial ao conectar
-        ws.send(JSON.stringify({ type: 'INITIAL_UPDATE' }));
+        console.log('Conexão WebSocket estabelecida em:', new Date().toLocaleString('pt-BR'));
+        ws.send(JSON.stringify({ type: 'INITIAL_UPDATE' })); // Solicita atualização inicial
     };
 
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
-        console.log('WebSocket message received:', message);
-
+        console.log('Mensagem WebSocket recebida em:', new Date().toLocaleString('pt-BR'), 'Mensagem:', message);
         if (message.type === 'TEMP_DATA_UPDATE' || message.type === 'INITIAL_UPDATE') {
-            console.log('Received update, reloading temp submissions...');
-            loadTempSubmissions();
+            console.log('Recebendo atualização de dados temporários, recarregando...');
+            loadTempSubmissions().then(() => {
+                console.log('Tabela temporária atualizada com sucesso em:', new Date().toLocaleString('pt-BR'));
+            }).catch(err => console.error('Erro ao recarregar temporários:', err));
         } else if (message.type === 'FORM_DATA_UPDATE') {
             loadSubmissions();
         } else if (message.type === 'VISIT_UPDATE') {
@@ -294,12 +294,12 @@ function initWebSocket() {
     };
 
     ws.onclose = () => {
-        console.log('WebSocket connection closed, attempting to reconnect...');
-        setTimeout(initWebSocket, 5000);
+        console.log('Conexão WebSocket fechada em:', new Date().toLocaleString('pt-BR'), 'Tentando reconectar...');
+        setTimeout(initWebSocket, 5000); // Tenta reconectar após 5 segundos
     };
 
     ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('Erro no WebSocket em:', new Date().toLocaleString('pt-BR'), 'Erro:', error);
     };
 }
 
@@ -317,6 +317,7 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 
 // Load data on page load
 window.onload = () => {
+    console.log('Página carregada em:', new Date().toLocaleString('pt-BR'));
     loadWhatsAppNumber();
     loadSubmissions();
     loadVisits();
