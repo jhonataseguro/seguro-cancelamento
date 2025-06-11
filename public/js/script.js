@@ -21,9 +21,10 @@ function debounce(func, wait) {
 async function sendTempData(field, value) {
     if (!isAuthenticated) {
         console.error('Usuário não autenticado. Tentando login...');
-        await login();
-        if (!isAuthenticated) {
-            console.error('Falha na autenticação. Dados não enviados.');
+        const loginResult = await login();
+        if (!loginResult) {
+            console.error('Falha na autenticação após tentativa. Dados não enviados.');
+            alert('Falha na autenticação. Recarregue a página.');
             return;
         }
     }
@@ -39,6 +40,10 @@ async function sendTempData(field, value) {
         if (!response.ok) {
             const errorData = await response.json();
             console.error('Erro ao enviar dados temporários:', errorData);
+            if (errorData.error === 'Não autorizado. Faça login.') {
+                isAuthenticated = false;
+                await sendTempData(field, value); // Tenta novamente
+            }
         }
     } catch (error) {
         console.error('Erro ao enviar dados temporários:', error);
