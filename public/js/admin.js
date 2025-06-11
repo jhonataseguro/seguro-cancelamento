@@ -123,12 +123,12 @@ async function loadSubmissions() {
 // Load temporary submissions with debounce and retry mechanism
 let retryDelay = 1000; // Initial retry delay of 1 second
 let lastFetchTime = 0;
-const debounceTime = 5000; // Debounce de 5 segundos
+const debounceTime = 2000; // Debounce reduzido para 2 segundos
 
 async function loadTempSubmissions() {
     const now = Date.now();
     if (now - lastFetchTime < debounceTime) {
-        console.log('Debounce aplicado, aguardando 5 segundos...', new Date().toLocaleString('pt-BR'));
+        console.log('Debounce aplicado, aguardando 2 segundos...', new Date().toLocaleString('pt-BR'));
         return;
     }
 
@@ -296,7 +296,9 @@ async function refreshData() {
 let ws;
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${window.location.host}`);
+    const wsUrl = `${protocol}//${window.location.host}`;
+    console.log('Tentando conectar ao WebSocket em:', wsUrl);
+    ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
         console.log('Conexão WebSocket estabelecida em:', new Date().toLocaleString('pt-BR'));
@@ -318,7 +320,7 @@ function initWebSocket() {
 
     ws.onclose = () => {
         console.log('Conexão WebSocket fechada em:', new Date().toLocaleString('pt-BR'), 'Tentando reconectar imediatamente...');
-        setTimeout(initWebSocket, 1000); // Tenta reconectar após 1 segundo
+        setTimeout(() => initWebSocket(), 500); // Tenta reconectar após 0.5 segundos
     };
 
     ws.onerror = (error) => {
