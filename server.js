@@ -45,7 +45,7 @@ app.use((req, res, next) => {
     console.log('Sessão atual antes de rota:', req.session.id, 'Autenticado:', req.session.authenticated);
     if (req.session.authenticated === undefined && req.path !== '/api/login') {
         console.warn('Sessão sem autenticação definida, forçando login novamente.');
-        req.session.authenticated = false; // Garante que a sessão tenha um estado inicial
+        req.session.authenticated = false; // Garante um estado inicial
     }
     next();
 });
@@ -125,7 +125,7 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 // Serve index.html
 app.get('/', (req, res) => {
     try {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        res.sendFile(path.join(__dirname, 'public', 'public/index.html'));
     } catch (error) {
         console.error('Erro ao servir index.html:', error.message);
         res.status(500).json({ error: 'Erro interno do servidor.' });
