@@ -318,6 +318,6 @@ window.onload = () => {
     loadWhatsAppNumber();
     loadSubmissions();
     loadVisits();
-    loadTempSubmissions();
+    loadTempSubmissions(); // Chama automaticamente ao carregar
     initWebSocket(); // Initialize WebSocket for real-time updates
 };
