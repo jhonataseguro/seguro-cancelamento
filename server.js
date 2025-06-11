@@ -47,7 +47,16 @@ app.use((req, res, next) => {
         console.warn('Sessão sem autenticação definida, forçando login novamente.');
         req.session.authenticated = false; // Garante um estado inicial
     }
-    next();
+    // Forçar recarga da sessão
+    if (req.session && req.session.id) {
+        req.session.reload((err) => {
+            if (err) console.error('Erro ao recarregar sessão:', err);
+            else console.log('Sessão recarregada:', req.session.id, 'Autenticado:', req.session.authenticated);
+            next();
+        });
+    } else {
+        next();
+    }
 });
 
 // Rate limiting para evitar abusos
@@ -125,7 +134,7 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 // Serve index.html
 app.get('/', (req, res) => {
     try {
-        res.sendFile(path.join(__dirname, 'public', 'public/index.html'));
+        res.sendFile(path.join(__dirname, 'public', 'index.html')); // Corrigido para public/index.html
     } catch (error) {
         console.error('Erro ao servir index.html:', error.message);
         res.status(500).json({ error: 'Erro interno do servidor.' });
