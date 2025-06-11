@@ -338,10 +338,10 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
-    // Verificação periódica como fallback (aumentado para 30 segundos)
+    // Verificação periódica como fallback a cada 60 segundos
     setInterval(() => {
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
         }).catch(err => console.error('Erro na verificação periódica:', err));
-    }, 30000); // Ajustado para 30 segundos
+    }, 60000); // Ajustado para 60 segundos
 };
