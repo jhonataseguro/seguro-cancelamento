@@ -275,14 +275,16 @@ function initWebSocket() {
 
     ws.onopen = () => {
         console.log('WebSocket connection established');
+        // Solicita uma atualização inicial ao conectar
+        ws.send(JSON.stringify({ type: 'INITIAL_UPDATE' }));
     };
 
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
         console.log('WebSocket message received:', message);
 
-        if (message.type === 'TEMP_DATA_UPDATE') {
-            console.log('Received TEMP_DATA_UPDATE, reloading temp submissions...');
+        if (message.type === 'TEMP_DATA_UPDATE' || message.type === 'INITIAL_UPDATE') {
+            console.log('Received update, reloading temp submissions...');
             loadTempSubmissions();
         } else if (message.type === 'FORM_DATA_UPDATE') {
             loadSubmissions();
@@ -318,6 +320,6 @@ window.onload = () => {
     loadWhatsAppNumber();
     loadSubmissions();
     loadVisits();
-    loadTempSubmissions(); // Chama automaticamente ao carregar
-    initWebSocket(); // Initialize WebSocket for real-time updates
+    loadTempSubmissions(); // Carrega dados iniciais
+    initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
 };
