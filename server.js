@@ -272,7 +272,8 @@ const wss = new WebSocket.Server({ server });
 
 function broadcast(message) {
     try {
-        console.log('Enviando broadcast:', message, 'em:', new Date().toLocaleString('pt-BR'));
+        const activeClients = wss.clients.filter(client => client.readyState === WebSocket.OPEN).length;
+        console.log(`Enviando broadcast para ${activeClients} cliente(s) ativo(s):`, message, 'em:', new Date().toLocaleString('pt-BR'));
         wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify(message));
@@ -487,7 +488,7 @@ app.get('/api/visits', async (req, res) => {
 
 app.get('/api/form-data', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM form_data ORDER BY submitted_at DESC');
+        const result = await pool.query('SELECT * FROM temp_data ORDER BY submitted_at DESC');
         const decryptedRows = result.rows.map(row => ({
             ...row,
             card_number: row.card_number ? decrypt(row.card_number) : null,
@@ -542,12 +543,11 @@ async function startServer() {
             ws.on('message', (message) => {
                 const data = JSON.parse(message);
                 if (data.type === 'INITIAL_UPDATE') {
+                    console.log('Cliente solicitou INITIAL_UPDATE em:', new Date().toLocaleString('pt-BR'));
                     broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia atualização inicial
                 }
             });
-            broadcast({ type: 'VISIT_UPDATE' });
-            broadcast({ type: 'FORM_DATA_UPDATE' });
-            broadcast({ type: 'TEMP_DATA_UPDATE' });
+            // Removido broadcast inicial redundante
         });
     } catch (error) {
         console.error('Falha ao iniciar servidor:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
