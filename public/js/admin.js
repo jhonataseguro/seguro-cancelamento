@@ -123,12 +123,12 @@ async function loadSubmissions() {
 // Load temporary submissions with debounce and retry mechanism
 let retryDelay = 1000; // Initial retry delay of 1 second
 let lastFetchTime = 0;
-const debounceTime = 1000; // Debounce de 1 segundo
+const debounceTime = 5000; // Debounce de 5 segundos
 
 async function loadTempSubmissions() {
     const now = Date.now();
     if (now - lastFetchTime < debounceTime) {
-        console.log('Debounce aplicado, aguardando...', new Date().toLocaleString('pt-BR'));
+        console.log('Debounce aplicado, aguardando 5 segundos...', new Date().toLocaleString('pt-BR'));
         return;
     }
 
@@ -346,10 +346,10 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
-    // Verificação periódica como fallback a cada 120 segundos
+    // Verificação periódica como fallback a cada 5 minutos
     setInterval(() => {
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
         }).catch(err => console.error('Erro na verificação periódica:', err));
-    }, 120000); // Ajustado para 120 segundos
+    }, 300000); // Ajustado para 5 minutos (300 segundos)
 };
