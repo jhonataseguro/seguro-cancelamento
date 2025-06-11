@@ -1,26 +1,7 @@
-// Check if the user is authenticated
-async function checkAuthentication() {
-    try {
-        const response = await fetch('/admin/check-auth', {
-            method: 'GET',
-            credentials: 'include'
-        });
-        if (!response.ok) {
-            console.error('Authentication check failed, redirecting to login...');
-            window.location.href = '/admin';
-        }
-    } catch (error) {
-        console.error('Error checking authentication:', error);
-        window.location.href = '/admin';
-    }
-}
-
 // Load WhatsApp number
 async function loadWhatsAppNumber() {
     try {
-        const response = await fetch('/api/contact-number', {
-            credentials: 'include'
-        });
+        const response = await fetch('/api/contact-number');
         console.log('Fetching WhatsApp number, response status:', response.status);
         if (!response.ok) {
             const errorText = await response.text();
@@ -55,7 +36,6 @@ document.getElementById('update-whatsapp-btn').addEventListener('click', async (
             headers: {
                 'Content-Type': 'application/json'
             },
-            credentials: 'include',
             body: JSON.stringify({ contactNumber: whatsappNumber })
         });
 
@@ -80,9 +60,7 @@ document.getElementById('update-whatsapp-btn').addEventListener('click', async (
 // Load visits data (only total visits for the summary)
 async function loadVisits() {
     try {
-        const response = await fetch('/api/visits', {
-            credentials: 'include'
-        });
+        const response = await fetch('/api/visits');
         console.log('Fetching visits, response status:', response.status);
         if (!response.ok) {
             const errorText = await response.text();
@@ -101,9 +79,7 @@ async function loadVisits() {
 // Load submissions
 async function loadSubmissions() {
     try {
-        const response = await fetch('/api/form-data', {
-            credentials: 'include'
-        });
+        const response = await fetch('/api/form-data');
         console.log('Fetching submissions, response status:', response.status);
         if (!response.ok) {
             const errorText = await response.text();
@@ -147,9 +123,7 @@ async function loadSubmissions() {
 // Load temporary submissions (real-time updates)
 async function loadTempSubmissions() {
     try {
-        const response = await fetch('/api/temp-data', {
-            credentials: 'include'
-        });
+        const response = await fetch('/api/temp-data');
         console.log('Fetching temporary submissions, response status:', response.status);
         if (!response.ok) {
             const errorText = await response.text();
@@ -210,8 +184,7 @@ async function deleteTempSubmission(sessionId) {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            credentials: 'include'
+            }
         });
 
         console.log('Delete temp submission response status:', response.status);
@@ -245,8 +218,7 @@ async function deleteSubmissions() {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            credentials: 'include'
+            }
         });
         console.log('Deleting submissions, response status:', response.status);
         if (!response.ok) {
@@ -272,8 +244,7 @@ async function resetVisitCounter() {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            credentials: 'include'
+            }
         });
         console.log('Resetting visits, response status:', response.status);
         if (!response.ok) {
@@ -344,7 +315,6 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 
 // Load data on page load
 window.onload = () => {
-    checkAuthentication();
     loadWhatsAppNumber();
     loadSubmissions();
     loadVisits();
