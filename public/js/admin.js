@@ -120,16 +120,24 @@ async function loadSubmissions() {
     }
 }
 
-// Load temporary submissions (real-time updates)
+// Load temporary submissions (real-time updates) with retry mechanism
+let retryDelay = 1000; // Initial retry delay of 1 second
 async function loadTempSubmissions() {
     try {
         const response = await fetch('/api/temp-data');
         console.log('Fetching temporary submissions, response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
         if (!response.ok) {
+            if (response.status === 429) {
+                console.warn(`Limite de requisições atingido. Tentando novamente em ${retryDelay / 1000} segundos.`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                retryDelay = Math.min(retryDelay * 2, 30000); // Exponential backoff up to 30 seconds
+                return loadTempSubmissions(); // Retry
+            }
             const errorText = await response.text();
             console.error('Error response from /api/temp-data:', errorText, 'em:', new Date().toLocaleString('pt-BR'));
             throw new Error(`Erro ao carregar os dados temporários: ${errorText}`);
         }
+        retryDelay = 1000; // Reset delay after success
         const tempSubmissions = await response.json();
         const tableBody = document.getElementById('temp-submissions-table-body');
 
@@ -174,7 +182,6 @@ async function loadTempSubmissions() {
         console.log('Temporary submissions data loaded successfully:', tempSubmissions, 'em:', new Date().toLocaleString('pt-BR'));
     } catch (error) {
         console.error('Error loading temporary submissions:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
-        alert(`Erro ao carregar os dados temporários: ${error.message}`);
         const tableBody = document.getElementById('temp-submissions-table-body');
         tableBody.innerHTML = `<tr><td colspan="8" class="px-4 py-2 text-center text-red-500">Erro ao carregar dados: ${error.message}</td></tr>`;
     }
@@ -331,10 +338,10 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
-    // Verificação periódica como fallback (a cada 5 segundos)
+    // Verificação periódica como fallback (aumentado para 30 segundos)
     setInterval(() => {
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
         }).catch(err => console.error('Erro na verificação periódica:', err));
-    }, 5000);
+    }, 30000); // Ajustado para 30 segundos
 };
