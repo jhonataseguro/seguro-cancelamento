@@ -560,7 +560,7 @@ async function startServer() {
                 const data = JSON.parse(message);
                 if (data.type === 'INITIAL_UPDATE') {
                     console.log('Cliente solicitou INITIAL_UPDATE em:', new Date().toLocaleString('pt-BR'));
-                    broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia atualização inicial
+                    setTimeout(() => broadcast({ type: 'TEMP_DATA_UPDATE' }), 100); // Atraso de 100ms
                 }
             });
         });
