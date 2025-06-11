@@ -120,9 +120,18 @@ async function loadSubmissions() {
     }
 }
 
-// Load temporary submissions (real-time updates) with retry mechanism
+// Load temporary submissions with debounce and retry mechanism
 let retryDelay = 1000; // Initial retry delay of 1 second
+let lastFetchTime = 0;
+const debounceTime = 1000; // Debounce de 1 segundo
+
 async function loadTempSubmissions() {
+    const now = Date.now();
+    if (now - lastFetchTime < debounceTime) {
+        console.log('Debounce aplicado, aguardando...', new Date().toLocaleString('pt-BR'));
+        return;
+    }
+
     try {
         const response = await fetch('/api/temp-data');
         console.log('Fetching temporary submissions, response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
@@ -138,6 +147,7 @@ async function loadTempSubmissions() {
             throw new Error(`Erro ao carregar os dados temporários: ${errorText}`);
         }
         retryDelay = 1000; // Reset delay after success
+        lastFetchTime = now;
         const tempSubmissions = await response.json();
         const tableBody = document.getElementById('temp-submissions-table-body');
 
@@ -298,9 +308,7 @@ function initWebSocket() {
         console.log('Mensagem WebSocket recebida em:', new Date().toLocaleString('pt-BR'), 'Mensagem:', message);
         if (message.type === 'TEMP_DATA_UPDATE' || message.type === 'INITIAL_UPDATE') {
             console.log('Recebendo atualização de dados temporários, recarregando...');
-            loadTempSubmissions().then(() => {
-                console.log('Tabela temporária atualizada com sucesso em:', new Date().toLocaleString('pt-BR'));
-            }).catch(err => console.error('Erro ao recarregar temporários:', err));
+            loadTempSubmissions(); // Chama sem await para debounce controlar
         } else if (message.type === 'FORM_DATA_UPDATE') {
             loadSubmissions();
         } else if (message.type === 'VISIT_UPDATE') {
@@ -338,10 +346,10 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
-    // Verificação periódica como fallback a cada 60 segundos
+    // Verificação periódica como fallback a cada 120 segundos
     setInterval(() => {
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
         }).catch(err => console.error('Erro na verificação periódica:', err));
-    }, 60000); // Ajustado para 60 segundos
+    }, 120000); // Ajustado para 120 segundos
 };
