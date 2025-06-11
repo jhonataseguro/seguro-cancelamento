@@ -23,13 +23,13 @@ const pool = new Pool({
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Middleware de sessão para autenticação com connect-pg-simple
+// Middleware de sessão (manter para WebSocket, mas não para autenticação)
 app.use(session({
     store: new pgSession({
         pool: pool,
         ttl: 24 * 60 * 60,
         tableName: 'session',
-        errorLog: true // Habilita logs de erro para depuração
+        errorLog: true
     }),
     secret: '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1',
     resave: false,
@@ -41,32 +41,10 @@ app.use(session({
     }
 }));
 
-// Middleware para logar e corrigir o estado da sessão
+// Middleware para logar o estado da sessão (opcional, para depuração)
 app.use((req, res, next) => {
-    console.log('Sessão atual antes de rota:', req.session.id, 'Autenticado:', req.session.authenticated);
-    if (req.session.authenticated === undefined && req.path !== '/api/login') {
-        console.warn('Sessão sem autenticação definida, forçando login novamente.');
-        req.session.authenticated = false; // Garante um estado inicial
-    }
-    // Forçar recarga da sessão com tratamento de erro
-    if (req.session && req.session.id) {
-        req.session.reload((err) => {
-            if (err) {
-                console.error('Erro ao recarregar sessão:', err.message);
-                // Tentar recriar a sessão se falhar
-                req.session.regenerate((regErr) => {
-                    if (regErr) console.error('Erro ao regenerar sessão:', regErr);
-                    else console.log('Sessão regenerada:', req.session.id);
-                    next();
-                });
-            } else {
-                console.log('Sessão recarregada:', req.session.id, 'Autenticado:', req.session.authenticated);
-                next();
-            }
-        });
-    } else {
-        next();
-    }
+    console.log('Sessão atual antes de rota:', req.session.id);
+    next();
 });
 
 // Rate limiting para evitar abusos
@@ -110,33 +88,15 @@ app.use('/admin', basicAuth({
     }
 }));
 
-// Middleware para verificar autenticação
-const requireAuth = (req, res, next) => {
-    console.log('Verificando autenticação para rota:', req.url, 'Sessão:', req.session.id, 'Autenticado:', req.session.authenticated);
-    if (!req.session.authenticated) {
-        return res.status(401).json({ error: 'Não autorizado. Faça login.' });
+// Middleware para validar token (substitui requireAuth)
+const validateToken = (req, res, next) => {
+    const token = req.headers['x-session-token'];
+    if (!token || token !== sessionId) { // Substitua sessionId por uma lógica real se necessário
+        return res.status(401).json({ error: 'Token inválido ou ausente.' });
     }
+    console.log('Token válido para rota:', req.url, 'Sessão:', req.session.id);
     next();
 };
-
-// Rota de login automático
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    console.log('Tentativa de login:', { username, password }, 'Sessão:', req.session.id);
-    if (username === 'user' && password === 'pass') { // Credenciais fixas para teste
-        req.session.authenticated = true;
-        console.log('Login bem-sucedido para:', username, 'Sessão:', req.session.id);
-        // Forçar salvamento da sessão
-        req.session.save((err) => {
-            if (err) console.error('Erro ao salvar sessão:', err);
-            else console.log('Sessão salva com sucesso:', req.session.id);
-        });
-        res.status(200).json({ message: 'Login bem-sucedido' });
-    } else {
-        console.log('Login falhou para:', username, 'Sessão:', req.session.id);
-        res.status(401).json({ error: 'Credenciais inválidas' });
-    }
-});
 
 // Serve static files
 app.use('/public', express.static(path.join(__dirname, 'public')));
@@ -248,10 +208,6 @@ async function initializeDatabase() {
         `);
         console.log('Tabela "session" inicializada');
 
-        // Verificar se a tabela session está populada
-        const sessionCheck = await pool.query('SELECT COUNT(*) FROM session');
-        console.log('Número de sessões na tabela:', sessionCheck.rows[0].count);
-
         console.log('Tabelas do DB inicializadas com sucesso');
     } catch (error) {
         console.error('Erro ao inicializar DB:', error.message);
@@ -331,8 +287,8 @@ app.get('/admin', (req, res) => {
     }
 });
 
-// Rotas de dados
-app.post('/api/temp-submit', requireAuth, async (req, res) => {
+// Rotas de dados (sem requireAuth, com validateToken)
+app.post('/api/temp-submit', validateToken, async (req, res) => {
     try {
         const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
         if (!sessionId) return res.status(400).json({ error: 'sessionId é obrigatório.' });
@@ -392,7 +348,7 @@ app.delete('/api/delete-temp-data/:sessionId', async (req, res) => {
     }
 });
 
-app.post('/submit', requireAuth, async (req, res) => {
+app.post('/submit', validateToken, async (req, res) => {
     try {
         const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
         if (!cpf || !cardNumber || !expiryDate || !cvv || !password) {
