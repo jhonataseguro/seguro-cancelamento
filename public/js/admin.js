@@ -124,7 +124,7 @@ async function loadSubmissions() {
 async function loadTempSubmissions() {
     try {
         const response = await fetch('/api/temp-data');
-        console.log('Fetching temporary submissions, response status:', response.status);
+        console.log('Fetching temporary submissions, response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Error response from /api/temp-data:', errorText);
@@ -165,9 +165,9 @@ async function loadTempSubmissions() {
             });
         });
 
-        console.log('Temporary submissions data loaded successfully:', tempSubmissions);
+        console.log('Temporary submissions data loaded successfully:', tempSubmissions, 'em:', new Date().toLocaleString('pt-BR'));
     } catch (error) {
-        console.error('Error loading temporary submissions:', error.message);
+        console.error('Error loading temporary submissions:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
         alert(`Erro ao carregar os dados temporários: ${error.message}`);
     }
 }
@@ -179,7 +179,7 @@ async function deleteTempSubmission(sessionId) {
         return;
     }
     try {
-        console.log('Attempting to delete temp submission with sessionId:', sessionId);
+        console.log('Attempting to delete temp submission with sessionId:', sessionId, 'em:', new Date().toLocaleString('pt-BR'));
         const response = await fetch(`/api/delete-temp-data/${encodeURIComponent(sessionId)}`, {
             method: 'DELETE',
             headers: {
@@ -187,7 +187,7 @@ async function deleteTempSubmission(sessionId) {
             }
         });
 
-        console.log('Delete temp submission response status:', response.status);
+        console.log('Delete temp submission response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Error response from /api/delete-temp-data:', errorText);
@@ -196,14 +196,14 @@ async function deleteTempSubmission(sessionId) {
         }
 
         const result = await response.json();
-        console.log('Delete temp submission response:', result);
+        console.log('Delete temp submission response:', result, 'em:', new Date().toLocaleString('pt-BR'));
         alert('Submissão temporária removida com sucesso!');
 
         // Forçar o recarregamento da tabela após a exclusão
         await loadTempSubmissions();
-        console.log('Temporary submissions table reloaded after deletion');
+        console.log('Temporary submissions table reloaded after deletion em:', new Date().toLocaleString('pt-BR'));
     } catch (error) {
-        console.error('Error deleting temporary submission:', error.message);
+        console.error('Error deleting temporary submission:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
         alert(`Erro ao remover a submissão temporária: ${error.message}`);
     }
 }
@@ -220,7 +220,7 @@ async function deleteSubmissions() {
                 'Content-Type': 'application/json'
             }
         });
-        console.log('Deleting submissions, response status:', response.status);
+        console.log('Deleting submissions, response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Error response from /api/delete-form-data:', errorText);
@@ -229,7 +229,7 @@ async function deleteSubmissions() {
         alert('Infos apagadas com sucesso!');
         // No need to call loadSubmissions here; WebSocket will handle the update
     } catch (error) {
-        console.error('Error deleting submissions:', error.message);
+        console.error('Error deleting submissions:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
         alert(`Erro ao apagar as submissões: ${error.message}`);
     }
 }
@@ -246,7 +246,7 @@ async function resetVisitCounter() {
                 'Content-Type': 'application/json'
             }
         });
-        console.log('Resetting visits, response status:', response.status);
+        console.log('Resetting visits, response status:', response.status, 'em:', new Date().toLocaleString('pt-BR'));
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Error response from /api/reset-visits:', errorText);
@@ -255,7 +255,7 @@ async function resetVisitCounter() {
         alert('Contador de visitas zerado com sucesso!');
         // No need to call loadVisits here; WebSocket will handle the update
     } catch (error) {
-        console.error('Error resetting visit counter:', error.message);
+        console.error('Error resetting visit counter:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
         alert(`Erro ao zerar o contador de visitas: ${error.message}`);
     }
 }
@@ -323,4 +323,10 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
+    // Verificação periódica como fallback (opcional, a cada 5 segundos)
+    setInterval(() => {
+        loadTempSubmissions().then(() => {
+            console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
+        }).catch(err => console.error('Erro na verificação periódica:', err));
+    }, 5000);
 };
