@@ -385,8 +385,8 @@ app.get('/api/temp-data', async (req, res) => {
                 };
             }
         });
-        console.log('Dados descriptografados:', decryptedRows);
-        res.json(decryptedRows);
+        console.log('Dados descriptografados antes da resposta:', decryptedRows);
+        res.json(decryptedRows); // Adiciona log após esta linha se necessário
     } catch (error) {
         console.error('Erro em /api/temp-data:', error.message, 'Stack:', error.stack);
         res.status(500).json({ error: 'Erro interno do servidor.' });
