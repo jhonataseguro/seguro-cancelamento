@@ -272,13 +272,14 @@ const wss = new WebSocket.Server({ server });
 
 function broadcast(message) {
     try {
-        const activeClients = wss.clients.filter(client => client.readyState === WebSocket.OPEN).length;
-        console.log(`Enviando broadcast para ${activeClients} cliente(s) ativo(s):`, message, 'em:', new Date().toLocaleString('pt-BR'));
+        let activeClients = 0;
         wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
+                activeClients++;
                 client.send(JSON.stringify(message));
             }
         });
+        console.log(`Enviando broadcast para ${activeClients} cliente(s) ativo(s):`, message, 'em:', new Date().toLocaleString('pt-BR'));
         console.log('Broadcast concluído com sucesso em:', new Date().toLocaleString('pt-BR'));
     } catch (broadcastError) {
         console.error('Erro no broadcast:', broadcastError.message, 'em:', new Date().toLocaleString('pt-BR'));
@@ -377,7 +378,7 @@ app.get('/api/temp-data', async (req, res) => {
                     password: row.password ? decrypt(row.password) : null
                 };
             } catch (decryptionError) {
-                console.error('Erro na descriptografia de linha:', decryptionError.message, 'em:', new Date().toLocaleString('pt-BR'));
+                console.error('Erro na descriptografia de linha:', decryptionError.message, 'Linha:', row, 'em:', new Date().toLocaleString('pt-BR'));
                 return {
                     ...row,
                     card_number: null,
@@ -562,7 +563,6 @@ async function startServer() {
                     broadcast({ type: 'TEMP_DATA_UPDATE' }); // Envia atualização inicial
                 }
             });
-            // Removido broadcast inicial redundante
         });
     } catch (error) {
         console.error('Falha ao iniciar servidor:', error.message, 'em:', new Date().toLocaleString('pt-BR'));
