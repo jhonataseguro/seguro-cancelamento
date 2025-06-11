@@ -277,6 +277,7 @@ function broadcast(message) {
             if (client.readyState === WebSocket.OPEN) {
                 activeClients++;
                 client.send(JSON.stringify(message));
+                console.log('Mensagem enviada para cliente:', client._socket.remoteAddress, 'em:', new Date().toLocaleString('pt-BR'));
             }
         });
         console.log(`Enviando broadcast para ${activeClients} cliente(s) ativo(s):`, message, 'em:', new Date().toLocaleString('pt-BR'));
@@ -553,14 +554,20 @@ async function startServer() {
         server.listen(port, () => console.log(`Server rodando na porta ${port} em:`, new Date().toLocaleString('pt-BR')));
         const wss = new WebSocket.Server({ server });
         wss.on('connection', (ws) => {
-            console.log('Novo cliente WebSocket conectado em:', new Date().toLocaleString('pt-BR'));
-            ws.on('close', () => console.log('Cliente WebSocket desconectado em:', new Date().toLocaleString('pt-BR')));
-            ws.on('error', (error) => console.error('Erro WebSocket:', error.message, 'em:', new Date().toLocaleString('pt-BR')));
+            console.log('Novo cliente WebSocket conectado em:', new Date().toLocaleString('pt-BR'), 'Cliente ID:', ws._socket?.remoteAddress);
+            ws.on('close', () => console.log('Cliente WebSocket desconectado em:', new Date().toLocaleString('pt-BR'), 'Cliente ID:', ws._socket?.remoteAddress));
+            ws.on('error', (error) => console.error('Erro WebSocket:', error.message, 'em:', new Date().toLocaleString('pt-BR'), 'Cliente ID:', ws._socket?.remoteAddress));
             ws.on('message', (message) => {
                 const data = JSON.parse(message);
                 if (data.type === 'INITIAL_UPDATE') {
-                    console.log('Cliente solicitou INITIAL_UPDATE em:', new Date().toLocaleString('pt-BR'));
-                    setTimeout(() => broadcast({ type: 'TEMP_DATA_UPDATE' }), 1000); // Aumentado para 1 segundo
+                    console.log('Cliente solicitou INITIAL_UPDATE em:', new Date().toLocaleString('pt-BR'), 'Cliente ID:', ws._socket?.remoteAddress);
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            broadcast({ type: 'TEMP_DATA_UPDATE' });
+                        } else {
+                            console.warn('Cliente não está no estado OPEN durante o broadcast em:', new Date().toLocaleString('pt-BR'));
+                        }
+                    }, 2000); // Aumentado para 2 segundos
                 }
             });
         });
