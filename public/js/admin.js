@@ -305,8 +305,10 @@ function initWebSocket() {
 
     ws.onopen = () => {
         console.log('Conexão WebSocket estabelecida em:', new Date().toLocaleString('pt-BR'));
-        ws.send(JSON.stringify({ type: 'INITIAL_UPDATE' })); // Solicita atualização inicial
-        loadTempSubmissions(); // Força atualização inicial após conexão
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'INITIAL_UPDATE' })); // Solicita atualização inicial apenas se a conexão estiver aberta
+            loadTempSubmissions(); // Força atualização inicial após conexão
+        }
         reconnectAttempts = 0; // Reseta tentativas de reconexão
     };
 
@@ -330,7 +332,7 @@ function initWebSocket() {
             setTimeout(() => {
                 initWebSocket(); // Tenta reconectar imediatamente
                 loadTempSubmissions(); // Força atualização após reconexão
-            }, 100); // Atraso de 100ms
+            }, 200); // Aumentado para 200ms
         } else {
             console.error('Máximo de tentativas de reconexão atingido:', maxReconnectAttempts);
         }
@@ -367,5 +369,5 @@ window.onload = () => {
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
         }).catch(err => console.error('Erro na verificação periódica:', err));
-    }, 10000); // Ajustado para 10 segundos (10000 ms)
+    }, 10000); // Mantido em 10 segundos (10000 ms)
 };
