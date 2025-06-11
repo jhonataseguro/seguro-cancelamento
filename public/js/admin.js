@@ -292,7 +292,7 @@ async function refreshData() {
     await loadVisits();
 }
 
-// WebSocket setup for real-time updates
+// WebSocket setup for real-time updates with enhanced logging
 let ws;
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -305,9 +305,9 @@ function initWebSocket() {
 
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
-        console.log('Mensagem WebSocket recebida em:', new Date().toLocaleString('pt-BR'), 'Mensagem:', message);
+        console.log('Mensagem WebSocket recebida em:', new Date().toLocaleString('pt-BR'), 'Dados brutos:', event.data, 'Mensagem parseada:', message);
         if (message.type === 'TEMP_DATA_UPDATE' || message.type === 'INITIAL_UPDATE') {
-            console.log('Recebendo atualização de dados temporários, recarregando...');
+            console.log('Atualização de dados temporários detectada, recarregando...');
             loadTempSubmissions(); // Chama sem await para debounce controlar
         } else if (message.type === 'FORM_DATA_UPDATE') {
             loadSubmissions();
@@ -317,12 +317,12 @@ function initWebSocket() {
     };
 
     ws.onclose = () => {
-        console.log('Conexão WebSocket fechada em:', new Date().toLocaleString('pt-BR'), 'Tentando reconectar...');
-        setTimeout(initWebSocket, 5000); // Tenta reconectar após 5 segundos
+        console.log('Conexão WebSocket fechada em:', new Date().toLocaleString('pt-BR'), 'Tentando reconectar imediatamente...');
+        setTimeout(initWebSocket, 1000); // Tenta reconectar após 1 segundo
     };
 
     ws.onerror = (error) => {
-        console.error('Erro no WebSocket em:', new Date().toLocaleString('pt-BR'), 'Erro:', error);
+        console.error('Erro no WebSocket em:', new Date().toLocaleString('pt-BR'), 'Detalhes:', error);
     };
 }
 
