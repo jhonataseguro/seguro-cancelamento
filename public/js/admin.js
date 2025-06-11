@@ -123,7 +123,7 @@ async function loadSubmissions() {
 // Load temporary submissions with debounce and retry mechanism
 let retryDelay = 1000; // Initial retry delay of 1 second
 let lastFetchTime = 0;
-const debounceTime = 1000; // Debounce reduzido para 1 segundo
+const debounceTime = 1000; // Debounce mantido em 1 segundo
 
 async function loadTempSubmissions() {
     const now = Date.now();
@@ -294,6 +294,9 @@ async function refreshData() {
 
 // WebSocket setup for real-time updates with enhanced logging and retry
 let ws;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 10;
+
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}`;
@@ -304,6 +307,7 @@ function initWebSocket() {
         console.log('Conexão WebSocket estabelecida em:', new Date().toLocaleString('pt-BR'));
         ws.send(JSON.stringify({ type: 'INITIAL_UPDATE' })); // Solicita atualização inicial
         loadTempSubmissions(); // Força atualização inicial após conexão
+        reconnectAttempts = 0; // Reseta tentativas de reconexão
     };
 
     ws.onmessage = (event) => {
@@ -320,11 +324,16 @@ function initWebSocket() {
     };
 
     ws.onclose = () => {
-        console.log('Conexão WebSocket fechada em:', new Date().toLocaleString('pt-BR'), 'Tentando reconectar imediatamente...');
-        setTimeout(() => {
-            initWebSocket(); // Tenta reconectar imediatamente
-            loadTempSubmissions(); // Força atualização após reconexão
-        }, 100); // Atraso mínimo de 100ms
+        console.log('Conexão WebSocket fechada em:', new Date().toLocaleString('pt-BR'), 'Tentando reconectar...');
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            setTimeout(() => {
+                initWebSocket(); // Tenta reconectar imediatamente
+                loadTempSubmissions(); // Força atualização após reconexão
+            }, 100); // Atraso de 100ms
+        } else {
+            console.error('Máximo de tentativas de reconexão atingido:', maxReconnectAttempts);
+        }
     };
 
     ws.onerror = (error) => {
@@ -352,10 +361,11 @@ window.onload = () => {
     loadVisits();
     loadTempSubmissions(); // Carrega dados iniciais
     initWebSocket(); // Inicializa WebSocket para atualizações em tempo real
-    // Verificação periódica como fallback a cada 5 minutos
+    // Verificação periódica a cada 10 segundos como fallback
     setInterval(() => {
+        console.log('Verificação periódica iniciada em:', new Date().toLocaleString('pt-BR'));
         loadTempSubmissions().then(() => {
             console.log('Verificação periódica de temporários concluída em:', new Date().toLocaleString('pt-BR'));
         }).catch(err => console.error('Erro na verificação periódica:', err));
-    }, 300000); // Ajustado para 5 minutos (300 segundos)
+    }, 10000); // Ajustado para 10 segundos (10000 ms)
 };
